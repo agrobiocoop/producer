@@ -8,8 +8,6 @@ from io import BytesIO
 import os
 import hashlib
 import time
-import qrcode
-import base64
 
 # Ρύθμιση σελίδας
 st.set_page_config(
@@ -20,6 +18,15 @@ st.set_page_config(
 
 # Τίτλος εφαρμογής
 st.title("🍊 Σύστημα Διαχείρισης Παραλαβών & Παραγγελιών")
+
+# Προσπάθεια εισαγωγής QR code (αν είναι διαθέσιμο)
+QR_AVAILABLE = False
+try:
+    import qrcode
+    import base64
+    QR_AVAILABLE = True
+except ImportError:
+    st.sidebar.warning("⚠️ Η λειτουργία QR code δεν είναι διαθέσιμη. Εγκαταστήστε την βιβλιοθήκη qrcode.")
 
 # Συναρτήσεις ασφαλείας
 def hash_password(password):
@@ -68,29 +75,41 @@ def save_data(data):
         with open(f'{key}.json', 'w', encoding='utf-8') as f:
             json.dump(value, f, ensure_ascii=False, indent=2)
 
-# Συνάρτηση δημιουργίας QR code
+# Συνάρτηση δημιουργίας QR code (μόνο αν είναι διαθέσιμο)
 def generate_qr_code(data, filename="qrcode.png"):
     """Δημιουργία QR code από δεδομένα"""
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
+    if not QR_AVAILABLE:
+        return None
     
-    img = qr.make_image(fill_color="black", back_color="white")
-    img.save(filename)
-    return filename
+    try:
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(data)
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="black", back_color="white")
+        img.save(filename)
+        return filename
+    except:
+        return None
 
 def get_binary_file_downloader_html(bin_file, file_label='File'):
     """Δημιουργία link για download"""
-    with open(bin_file, 'rb') as f:
-        data = f.read()
-    bin_str = base64.b64encode(data).decode()
-    href = f'<a href="data:application/octet-stream;base64,{bin_str}" download="{bin_file}">{file_label}</a>'
-    return href
+    if not os.path.exists(bin_file):
+        return ""
+    
+    try:
+        with open(bin_file, 'rb') as f:
+            data = f.read()
+        bin_str = base64.b64encode(data).decode()
+        href = f'<a href="data:application/octet-stream;base64,{bin_str}" download="{bin_file}">{file_label}</a>'
+        return href
+    except:
+        return ""
 
 # Αρχικοποίηση
 init_admin_user()
@@ -168,7 +187,7 @@ def delete_item(item_type, item_id):
     st.rerun()
 
 def start_edit(item_type, item_id):
-    """Ενεργοποίηση λειτουργίας επεξεργασίας"""
+    """Ενεργοποίηση λειτουργίας επεξерγασίας"""
     st.session_state.edit_mode = True
     st.session_state.current_edit_id = item_id
     st.session_state.current_edit_type = item_type
@@ -338,15 +357,20 @@ with current_tab[1]:
             save_data({'receipts': st.session_state['receipts']})
             st.success(f"✅ Η παραλαβή #{receipt_id} καταχωρήθηκε επιτυχώς!")
             
-            # ΔΗΜΙΟΥΡΓΙΑ QR CODE
-            qr_data = f"ΠΑΡΑΛΑΒΗ #{receipt_id}\nΠαραγωγός: {selected_producer}\nΗμερομηνία: {receipt_date}\nΠοσότητα: {total_kg} kg\nΑξία: {total_value:.2f}€"
-            qr_filename = generate_qr_code(qr_data, f"receipt_{receipt_id}_qrcode.png")
-            
-            st.success("📲 QR Code δημιουργήθηκε!")
-            st.image(qr_filename, caption=f"QR Code για Παραλαβή #{receipt_id}", width=200)
-            
-            # DOWNLOAD LINK ΓΙΑ QR CODE
-            st.markdown(get_binary_file_downloader_html(qr_filename, f"Κατεβάστε QR Code για Παραλαβή #{receipt_id}"), unsafe_allow_html=True)
+            # ΔΗΜΙΟΥΡΓΙΑ QR CODE (ΜΟΝΟ ΑΝ ΕΙΝΑΙ ΔΙΑΘΕΣΙΜΟ)
+            if QR_AVAILABLE:
+                qr_data = f"ΠΑΡΑΛΑΒΗ #{receipt_id}\nΠαραγωγός: {selected_producer}\nΗμερομηνία: {receipt_date}\nΠοσότητα: {total_kg} kg\nΑξία: {total_value:.2f}€"
+                qr_filename = generate_qr_code(qr_data, f"receipt_{receipt_id}_qrcode.png")
+                
+                if qr_filename:
+                    st.success("📲 QR Code δημιουργήθηκε!")
+                    st.image(qr_filename, caption=f"QR Code για Παραλαβή #{receipt_id}", width=200)
+                    try:
+                        st.markdown(get_binary_file_downloader_html(qr_filename, f"Κατεβάστε QR Code για Παραλαβή #{receipt_id}"), unsafe_allow_html=True)
+                    except:
+                        pass
+            else:
+                st.info("📋 QR Code functionality will be available after installing qrcode library")
             
             time.sleep(3)
             st.rerun()
@@ -428,57 +452,25 @@ with current_tab[2]:
             save_data({'orders': st.session_state['orders']})
             st.success(f"✅ Η παραγγελία #{order_id} καταχωρήθηκε επιτυχώς!")
             
-            # ΔΗΜΙΟΥΡΓΙΑ QR CODE
-            qr_data = f"ΠΑΡΑΓΓΕΛΙΑ #{order_id}\nΠελάτης: {customer_name}\nΗμερομηνία: {order_date}\nΠοσότητα: {total_kg} kg\nΑξία: {total_value:.2f}€"
-            qr_filename = generate_qr_code(qr_data, f"order_{order_id}_qrcode.png")
-            
-            st.success("📲 QR Code δημιουργήθηκε!")
-            st.image(qr_filename, caption=f"QR Code για Παραγγελία #{order_id}", width=200)
-            
-            # DOWNLOAD LINK ΓΙΑ QR CODE
-            st.markdown(get_binary_file_downloader_html(qr_filename, f"Κατεβάστε QR Code για Παραγγελία #{order_id}"), unsafe_allow_html=True)
+            # ΔΗΜΙΟΥΡΓΙΑ QR CODE (ΜΟΝΟ ΑΝ ΕΙΝΑΙ ΔΙΑΘΕΣΙΜΟ)
+            if QR_AVAILABLE:
+                qr_data = f"ΠΑΡΑΓΓΕΛΙΑ #{order_id}\nΠελάτης: {customer_name}\nΗμερομηνία: {order_date}\nΠοσότητα: {total_kg} kg\nΑξία: {total_value:.2f}€"
+                qr_filename = generate_qr_code(qr_data, f"order_{order_id}_qrcode.png")
+                
+                if qr_filename:
+                    st.success("📲 QR Code δημιουργήθηκε!")
+                    st.image(qr_filename, caption=f"QR Code για Παραγγελία #{order_id}", width=200)
+                    try:
+                        st.markdown(get_binary_file_downloader_html(qr_filename, f"Κατεβάστε QR Code για Παραγγελία #{order_id}"), unsafe_allow_html=True)
+                    except:
+                        pass
+            else:
+                st.info("📋 QR Code functionality will be available after installing qrcode library")
             
             time.sleep(3)
             st.rerun()
 
-# Tab 4: Αναφορές
-with current_tab[3]:
-    st.header("📈 Αναφορές και Εκτυπώσεις")
-    
-    # Προσθήκη QR code generation για υπάρχουσες εγγραφές
-    st.subheader("📲 Δημιουργία QR Code για υπάρχουσες εγγραφές")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Για Παραλαβές:**")
-        if st.session_state['receipts']:
-            receipt_options = [f"{r['id']} - {r.get('variety', '')} ({r['receipt_date']})" for r in st.session_state['receipts']]
-            selected_receipt = st.selectbox("Επιλέξτε Παραλαβή", options=receipt_options)
-            if selected_receipt and st.button("📲 QR για Παραλαβή"):
-                receipt_id = int(selected_receipt.split(" - ")[0])
-                receipt = next((r for r in st.session_state['receipts'] if r['id'] == receipt_id), None)
-                if receipt:
-                    qr_data = f"ΠΑΡΑΛΑΒΗ #{receipt['id']}\nΗμερομηνία: {receipt['receipt_date']}\nΠοσότητα: {receipt.get('total_kg', 0)} kg\nΑξία: {receipt.get('total_value', 0):.2f}€"
-                    qr_filename = generate_qr_code(qr_data, f"receipt_{receipt_id}_qrcode.png")
-                    st.image(qr_filename, caption=f"QR Code για Παραλαβή #{receipt_id}", width=200)
-                    st.markdown(get_binary_file_downloader_html(qr_filename, f"Κατεβάστε QR Code"), unsafe_allow_html=True)
-    
-    with col2:
-        st.write("**Για Παραγγελίες:**")
-        if st.session_state['orders']:
-            order_options = [f"{o['id']} - {o.get('customer', '')} ({o['date']})" for o in st.session_state['orders']]
-            selected_order = st.selectbox("Επιλέξτε Παραγγελία", options=order_options)
-            if selected_order and st.button("📲 QR για Παραγγελία"):
-                order_id = int(selected_order.split(" - ")[0])
-                order = next((o for o in st.session_state['orders'] if o['id'] == order_id), None)
-                if order:
-                    qr_data = f"ΠΑΡΑΓΓΕΛΙΑ #{order['id']}\nΠελάτης: {order.get('customer', '')}\nΗμερομηνία: {order['date']}\nΠοσότητα: {order.get('total_kg', 0)} kg\nΑξία: {order.get('total_value', 0):.2f}€"
-                    qr_filename = generate_qr_code(qr_data, f"order_{order_id}_qrcode.png")
-                    st.image(qr_filename, caption=f"QR Code για Παραγγελία #{order_id}", width=200)
-                    st.markdown(get_binary_file_downloader_html(qr_filename, f"Κατεβάστε QR Code"), unsafe_allow_html=True)
-
-# Τα υπόλοιπα tabs παραμένουν ως έχουν...
+# Τα υπόλοιπα tabs παραμένουν χωρίς QR code functionality για τώρα
 
 # Πλευρικό μενού
 st.sidebar.header("📋 Γρήγορη Πρόσβαση")
@@ -490,7 +482,7 @@ if st.sidebar.button("📊 Εξαγωγή Όλων Δεδομένων"):
         if st.session_state['customers']:
             pd.DataFrame(st.session_state['customers']).to_excel(writer, sheet_name='Πελάτες', index=False)
         if st.session_state['agencies']:
-            pd.DataFrame(st.session_state['agencies']).to_excel(writer, sheet_name='Πρακτορεία', index=False)
+            pd.DataFrame(st.session_state['agencies']).to.excel(writer, sheet_name='Πρακτορεία', index=False)
         if st.session_state['receipts']:
             pd.DataFrame(st.session_state['receipts']).to_excel(writer, sheet_name='Παραλαβές', index=False)
         if st.session_state['orders']:
