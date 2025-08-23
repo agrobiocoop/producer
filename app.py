@@ -454,10 +454,10 @@ with current_tab[2]:
             st.write("**Παραδοθείσα Ποσότητα:**")
             delivered_quantities = {}
             for size in sizes:
-                delivered_quantities[size] = st.number_input(f"Παραδοθείσα για νούμερο {size}", min_value=0, step=1, value=0, key=f"delivered_{size}", value=0)
+                delivered_quantities[size] = st.number_input(f"Παραδοθείσα για νούμερο {size}", min_value=0, step=1, key=f"delivered_{size}", value=0)
             
             # ΠΟΙΟΤΗΤΕΣ (ΣΚΑΡΤΑ)
-            st.subheader("📊 Ποιότητες (Σκάρτα)")
+            st.subheader("📊 Ποιότητες (Σκάρta)")
             qualities = ["I", "II", "III"]
             quality_quantities = {}
             for quality in qualities:
