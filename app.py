@@ -95,6 +95,8 @@ if 'edit_item' not in st.session_state:
     st.session_state.edit_item = None
 if 'edit_type' not in st.session_state:
     st.session_state.edit_type = None
+if 'current_tab' not in st.session_state:
+    st.session_state.current_tab = "Κεντρική Βάση"
 
 # Συνάρτηση σύνδεσης
 def login():
@@ -199,12 +201,26 @@ if not st.session_state['customers']:
     ]
     save_data({'customers': st.session_state['customers']})
 
+# Πλαϊνό μενού για γρήγορη πρόσβαση
+st.sidebar.header("📋 Γρήγορη Πρόσβαση")
+menu_options = [
+    "Κεντρική Βάση", 
+    "Νέα Παραλαβή", 
+    "Νέα Παραγγελία", 
+    "Αναφορές", 
+    "Διαχείριση", 
+    "Διαχείριση Χρηστών", 
+    "Αποθηκευτικοί Χώροι"
+]
+selected_menu = st.sidebar.radio("Επιλέξτε ενότητα", menu_options)
+st.session_state.current_tab = selected_menu
+
 # Στήλες για το tab layout
-tabs = ["Κεντρική Βάση", "Νέα Παραλαβή", "Νέα Παραγγελία", "Αναφορές", "Διαχείριση", "Διαχείριση Χρηστών", "Αποθηκευτικοί Χώροι"]
-current_tab = st.tabs(tabs)
+tabs = st.tabs(menu_options)
+current_tab_index = menu_options.index(st.session_state.current_tab)
 
 # Tab 1: Κεντρική Βάση
-with current_tab[0]:
+with tabs[0]:
     st.header("📊 Κεντρική Βάση Δεδομένων")
     
     # Επιλογή τύπου δεδομένων για επεξεργασία
@@ -270,64 +286,101 @@ with current_tab[0]:
         st.info(f"Δεν υπάρχουν καταχωρημένες {data_type}")
 
 # Tab 2: Νέα Παραλαβή
-with current_tab[1]:
+with tabs[1]:
     st.header("📥 Καταχώρηση Νέας Παραλαβής")
+    
+    # Έλεγχος αν υπάρχει προς επεξεργασία στοιχείο
+    if st.session_state.edit_item and st.session_state.edit_type == 'receipts':
+        receipt = st.session_state.edit_item
+        is_edit = True
+        st.info("📝 Επεξεργασία υπάρχουσας παραλαβής")
+    else:
+        receipt = {}
+        is_edit = False
     
     with st.form("receipt_form"):
         col1, col2 = st.columns(2)
         
         with col1:
-            receipt_id = st.number_input("Αριθμός Παραλαβής", min_value=1, step=1, value=get_next_id(st.session_state['receipts']))
+            if is_edit:
+                receipt_id = st.number_input("Αριθμός Παραλαβής", value=receipt['id'], disabled=True)
+                st.text_input("Αριθμός LOT", value=receipt.get('lot', ''), disabled=True)
+            else:
+                receipt_id = st.number_input("Αριθμός Παραλαβής", min_value=1, step=1, value=get_next_id(st.session_state['receipts']))
             
             # Επιλογή ημερομηνίας
-            receipt_date = st.date_input("Ημερομηνία Παραλαβής", value=datetime.today())
+            if is_edit:
+                receipt_date = st.date_input("Ημερομηνία Παραλαβής", value=datetime.strptime(receipt['receipt_date'], '%Y-%m-%d'))
+            else:
+                receipt_date = st.date_input("Ημερομηνία Παραλαβής", value=datetime.today())
             
             # Επιλογή παραγωγού
             producer_options = [f"{p['id']} - {p['name']}" for p in st.session_state['producers']]
-            selected_producer = st.selectbox("Παραγωγός", options=producer_options)
+            default_producer = next((i for i, p in enumerate(producer_options) 
+                                   if str(receipt.get('producer_id', '')) in p), 0)
+            selected_producer = st.selectbox("Παραγωγός", options=producer_options, index=default_producer)
             producer_id = int(selected_producer.split(" - ")[0]) if selected_producer else None
             producer_name = selected_producer.split(" - ")[1] if selected_producer else ""
             
-            variety = st.text_input("Ποικιλία")
+            variety = st.text_input("Ποικιλία", value=receipt.get('variety', ''))
             
             # Αυτόματη δημιουργία LOT
             if variety and producer_id and receipt_date:
                 lot_number = generate_lot_number(receipt_date, producer_id, variety)
-                st.text_input("Αριθμός LOT", value=lot_number, disabled=True)
+                if not is_edit:
+                    st.text_input("Αριθμός LOT", value=lot_number, disabled=True)
             else:
-                lot_number = ""
+                lot_number = receipt.get('lot', '')
             
             # Επιλογή αποθηκευτικού χώρου
             storage_options = [f"{s['id']} - {s['name']}" for s in st.session_state['storage_locations']]
-            selected_storage = st.selectbox("Αποθηκευτικός Χώρος", options=storage_options)
+            default_storage = next((i for i, s in enumerate(storage_options) 
+                                  if str(receipt.get('storage_location_id', '')) in s), 0)
+            selected_storage = st.selectbox("Αποθηκευτικός Χώρος", options=storage_options, index=default_storage)
             storage_id = int(selected_storage.split(" - ")[0]) if selected_storage else None
             
             # Πληρωμή
-            paid_status = st.selectbox("Πληρώθηκε;", ["Ναι", "Όχι"])
+            paid_status = st.selectbox("Πληρώθηκε;", ["Ναι", "Όχι"], 
+                                     index=0 if receipt.get('paid') == "Ναι" else 1)
         
         with col2:
             # Ποσότητες ανά νούμερο
             st.subheader("📊 Ποσότητες ανά Νούμερο")
             sizes = ["10", "12", "14", "16", "18", "20", "22", "24", "26", "26-32", "Διάφορα", "Σκάρτα", "Μεταποίηση"]
-            size_quantities = {}
+            size_quantities = receipt.get('size_quantities', {})
             for size in sizes:
-                size_quantities[size] = st.number_input(f"Ποσότητα για νούμερο {size}", min_value=0, step=1, key=f"size_{size}")
+                size_quantities[size] = st.number_input(
+                    f"Ποσότητα για νούμερο {size}", 
+                    min_value=0, step=1, 
+                    value=int(size_quantities.get(size, 0)),
+                    key=f"size_{size}"
+                )
             
             # Ποσότητες ανά ποιότητα
             st.subheader("📊 Ποσότητες ανά Ποιότητα")
             qualities = ["Ι", "ΙΙ", "ΙΙΙ", "Σκάρτα", "Διάφορα", "Μεταποίηση"]
-            quality_quantities = {}
+            quality_quantities = receipt.get('quality_quantities', {})
             for quality in qualities:
-                quality_quantities[quality] = st.number_input(f"Ποσότητα για ποιότητα {quality}", min_value=0, step=1, key=f"quality_{quality}")
+                quality_quantities[quality] = st.number_input(
+                    f"Ποσότητα για ποιότητα {quality}", 
+                    min_value=0, step=1, 
+                    value=int(quality_quantities.get(quality, 0)),
+                    key=f"quality_{quality}"
+                )
             
             # Πιστοποιήσεις
             certifications = st.multiselect(
                 "📑 Πιστοποιήσεις",
-                ["GlobalGAP", "GRASP", "Βιολογικό", "Βιοδυναμικό", "Συμβατικό", "ΟΠ"]
+                ["GlobalGAP", "GRASP", "Βιολογικό", "Βιοδυναμικό", "Συμβατικό", "ΟΠ"],
+                default=receipt.get('certifications', [])
             )
             
             # Συμφωνηθείσα τιμή
-            agreed_price_per_kg = st.number_input("💰 Συμφωνηθείσα Τιμή ανά κιλό", min_value=0.0, step=0.01, value=0.0)
+            agreed_price_per_kg = st.number_input(
+                "💰 Συμφωνηθείσα Τιμή ανά κιλό", 
+                min_value=0.0, step=0.01, 
+                value=receipt.get('agreed_price_per_kg', 0.0)
+            )
             
             # Υπολογισμός συνολικής αξίας
             total_kg = sum(size_quantities.values()) + sum(quality_quantities.values())
@@ -337,7 +390,7 @@ with current_tab[1]:
                 st.info(f"📦 Σύνολο κιλών: {total_kg} kg")
                 st.success(f"💶 Συνολική αξία: {total_value:.2f} €")
             
-            observations = st.text_area("📝 Παρατηρήσεις")
+            observations = st.text_area("📝 Παρατηρήσεις", value=receipt.get('observations', ''))
         
         submitted = st.form_submit_button("✅ Καταχώρηση Παραλαβής")
         
@@ -363,62 +416,112 @@ with current_tab[1]:
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             
-            st.session_state['receipts'].append(new_receipt)
+            if is_edit:
+                # Ενημέρωση υπάρχουσας παραλαβής
+                for i, item in enumerate(st.session_state['receipts']):
+                    if item['id'] == receipt_id:
+                        st.session_state['receipts'][i] = new_receipt
+                        break
+                st.success(f"✅ Η παραλαβή #{receipt_id} ενημερώθηκε επιτυχώς!")
+            else:
+                # Προσθήκη νέας παραλαβής
+                st.session_state['receipts'].append(new_receipt)
+                st.success(f"✅ Η παραλαβή #{receipt_id} καταχωρήθηκε επιτυχώς!")
+            
             save_data({'receipts': st.session_state['receipts']})
-            st.success(f"✅ Η παραλαβή #{receipt_id} καταχωρήθηκε επιτυχώς!")
+            st.session_state.edit_item = None
+            st.session_state.edit_type = None
             time.sleep(2)
             st.rerun()
 
 # Tab 3: Νέα Παραγγελία
-with current_tab[2]:
+with tabs[2]:
     st.header("📋 Καταχώρηση Νέας Παραγγελίας")
+    
+    # Έλεγχος αν υπάρχει προς επεξεργασία στοιχείο
+    if st.session_state.edit_item and st.session_state.edit_type == 'orders':
+        order = st.session_state.edit_item
+        is_edit = True
+        st.info("📝 Επεξεργασία υπάρχουσας παραγγελίας")
+    else:
+        order = {}
+        is_edit = False
     
     with st.form("order_form"):
         col1, col2 = st.columns(2)
         
         with col1:
-            order_id = st.number_input("Αριθμός Παραγγελίας", min_value=1, step=1, value=get_next_id(st.session_state['orders']))
+            if is_edit:
+                order_id = st.number_input("Αριθμός Παραγγελίας", value=order['id'], disabled=True)
+                st.text_input("Αριθμός LOT", value=order.get('lot', ''), disabled=True)
+            else:
+                order_id = st.number_input("Αριθμός Παραγγελίας", min_value=1, step=1, value=get_next_id(st.session_state['orders']))
             
-            order_date = st.date_input("Ημερομηνία Παραγγελίας", value=datetime.today())
+            if is_edit:
+                order_date = st.date_input("Ημερομηνία Παραγγελίας", value=datetime.strptime(order['date'], '%Y-%m-%d'))
+            else:
+                order_date = st.date_input("Ημερομηνία Παραγγελίας", value=datetime.today())
             
             # Επιλογή πελάτη
             customer_options = [f"{c['id']} - {c['name']}" for c in st.session_state['customers']]
-            selected_customer = st.selectbox("Πελάτης", options=customer_options)
+            default_customer = next((i for i, c in enumerate(customer_options) 
+                                   if str(order.get('customer_id', '')) in c), 0)
+            selected_customer = st.selectbox("Πελάτης", options=customer_options, index=default_customer)
             customer_id = int(selected_customer.split(" - ")[0]) if selected_customer else None
             customer_name = selected_customer.split(" - ")[1] if selected_customer else ""
             
-            variety = st.text_input("Ποικιλία Παραγγελίας")
+            variety = st.text_input("Ποικιλία Παραγγελίας", value=order.get('variety', ''))
             
             # Αυτόματη δημιουργία LOT
             if variety and customer_id and order_date:
                 lot_number = generate_lot_number(order_date, customer_id, variety)
-                st.text_input("Αριθμός LOT", value=lot_number, disabled=True)
+                if not is_edit:
+                    st.text_input("Αριθμός LOT", value=lot_number, disabled=True)
             else:
-                lot_number = ""
+                lot_number = order.get('lot', '')
             
             # Πληρωμή
-            paid_status = st.selectbox("Πληρώθηκε;", ["Ναι", "Όχι"])
+            paid_status = st.selectbox("Πληρώθηκε;", ["Ναι", "Όχι"], 
+                                     index=0 if order.get('paid') == "Ναι" else 1)
         
         with col2:
             # Ποσότητες παραγγελίας ανά νούμερο
             st.subheader("📦 Ποσότητες Παραγγελίας ανά Νούμερο")
             sizes = ["10", "12", "14", "16", "18", "20", "22", "24", "26", "26-32", "Διάφορα", "Σκάρτα", "Μεταποίηση"]
-            order_size_quantities = {}
+            order_size_quantities = order.get('size_quantities', {})
             for size in sizes:
-                order_size_quantities[size] = st.number_input(f"Ποσότητα για νούμερο {size}", min_value=0, step=1, key=f"order_size_{size}")
+                order_size_quantities[size] = st.number_input(
+                    f"Ποσότητα για νούμερο {size}", 
+                    min_value=0, step=1, 
+                    value=int(order_size_quantities.get(size, 0)),
+                    key=f"order_size_{size}"
+                )
             
             # Ποσότητες παραγγελίας ανά ποιότητα
             st.subheader("📦 Ποσότητες Παραγγελίας ανά Ποιότητα")
             qualities = ["Ι", "ΙΙ", "ΙΙΙ", "Σκάρτα", "Διάφορα", "Μεταποίηση"]
-            order_quality_quantities = {}
+            order_quality_quantities = order.get('quality_quantities', {})
             for quality in qualities:
-                order_quality_quantities[quality] = st.number_input(f"Ποσότητα για ποιότητα {quality}", min_value=0, step=1, key=f"order_quality_{quality}")
+                order_quality_quantities[quality] = st.number_input(
+                    f"Ποσότητα για ποιότητα {quality}", 
+                    min_value=0, step=1, 
+                    value=int(order_quality_quantities.get(quality, 0)),
+                    key=f"order_quality_{quality}"
+                )
             
             # Εκτελεσθείσα ποσότητα
-            executed_quantity = st.number_input("Εκτελεσθείσα Ποσότητα (kg)", min_value=0, step=1, value=0)
+            executed_quantity = st.number_input(
+                "Εκτελεσθείσα Ποσότητα (kg)", 
+                min_value=0, step=1, 
+                value=order.get('executed_quantity', 0)
+            )
             
             # Συμφωνηθείσα τιμή
-            agreed_price_per_kg = st.number_input("💰 Συμφωνηθείσα Τιμή ανά κιλό", min_value=0.0, step=0.01, value=0.0)
+            agreed_price_per_kg = st.number_input(
+                "💰 Συμφωνηθείσα Τιμή ανά κιλό", 
+                min_value=0.0, step=0.01, 
+                value=order.get('agreed_price_per_kg', 0.0)
+            )
             
             # Υπολογισμός συνολικής αξίας
             total_kg = sum(order_size_quantities.values()) + sum(order_quality_quantities.values())
@@ -428,7 +531,7 @@ with current_tab[2]:
                 st.info(f"📦 Σύνολο κιλών: {total_kg} kg")
                 st.success(f"💶 Συνολική αξία: {total_value:.2f} €")
             
-            order_observations = st.text_area("📝 Παρατηρήσεις Παραγγελίας")
+            order_observations = st.text_area("📝 Παρατηρήσεις Παραγγελίας", value=order.get('observations', ''))
         
         submitted = st.form_submit_button("✅ Καταχώρηση Παραγγελίας")
         
@@ -452,14 +555,26 @@ with current_tab[2]:
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             
-            st.session_state['orders'].append(new_order)
+            if is_edit:
+                # Ενημέρωση υπάρχουσας παραγγελίας
+                for i, item in enumerate(st.session_state['orders']):
+                    if item['id'] == order_id:
+                        st.session_state['orders'][i] = new_order
+                        break
+                st.success(f"✅ Η παραγγελία #{order_id} ενημерώθηκε επιτυχώς!")
+            else:
+                # Προσθήκη νέας παραγγελίας
+                st.session_state['orders'].append(new_order)
+                st.success(f"✅ Η παραγγελία #{order_id} καταχωρήθηκε επιτυχώς!")
+            
             save_data({'orders': st.session_state['orders']})
-            st.success(f"✅ Η παραγγελία #{order_id} καταχωρήθηκε επιτυχώς!")
+            st.session_state.edit_item = None
+            st.session_state.edit_type = None
             time.sleep(2)
             st.rerun()
 
 # Tab 4: Αναφορές
-with current_tab[3]:
+with tabs[3]:
     st.header("📈 Αναφορές και Εξαγωγές")
     
     report_type = st.selectbox("Επιλέξτε τύπο αναφοράς", [
@@ -483,6 +598,9 @@ with current_tab[3]:
             
             cert_options = ["Όλες"] + ["GlobalGAP", "GRASP", "Βιολογικό", "Βιοδυναμικό", "Συμβατικό", "ΟΠ"]
             selected_cert = st.selectbox("Πιστοποίηση", options=cert_options)
+            
+            # Επιλογή τύπου αθροίσματος
+            sum_type = st.selectbox("Τύπος Αθροίσματος", ["Σύνολο", "Ανά Νούμερο", "Ανά Ποιότητα"])
         
         with col2:
             filtered_receipts = []
@@ -503,12 +621,41 @@ with current_tab[3]:
                 
                 filtered_receipts.append(receipt)
             
-            total_kg = sum(r['total_kg'] for r in filtered_receipts)
-            total_value = sum(r['total_value'] for r in filtered_receipts)
+            # Υπολογισμός συνολικών ποσοτήτων
+            if sum_type == "Σύνολο":
+                total_kg = sum(r['total_kg'] for r in filtered_receipts)
+                total_value = sum(r['total_value'] for r in filtered_receipts)
+            elif sum_type == "Ανά Νούμερο":
+                # Υπολογισμός ποσοτήτων ανά νούμερο
+                size_totals = {}
+                for size in ["10", "12", "14", "16", "18", "20", "22", "24", "26", "26-32", "Διάφορα", "Σκάρτα", "Μεταποίηση"]:
+                    size_totals[size] = sum(r.get('size_quantities', {}).get(size, 0) for r in filtered_receipts)
+                total_kg = sum(size_totals.values())
+                total_value = sum(r['total_value'] for r in filtered_receipts)
+            else:  # Ανά Ποιότητα
+                # Υπολογισμός ποσοτήτων ανά ποιότητα
+                quality_totals = {}
+                for quality in ["Ι", "ΙΙ", "ΙΙΙ", "Σκάρτα", "Διάφορα", "Μεταποίηση"]:
+                    quality_totals[quality] = sum(r.get('quality_quantities', {}).get(quality, 0) for r in filtered_receipts)
+                total_kg = sum(quality_totals.values())
+                total_value = sum(r['total_value'] for r in filtered_receipts)
             
             st.metric("Συνολικές Παραλαβές", len(filtered_receipts))
             st.metric("Συνολικά Κιλά", f"{total_kg} kg")
             st.metric("Συνολική Αξία", f"{total_value:.2f} €")
+            
+            # Εμφάνιση αναλυτικών ποσοτήτων
+            if sum_type == "Ανά Νούμερο" and size_totals:
+                st.write("**Ποσότητες ανά Νούμερο:**")
+                for size, quantity in size_totals.items():
+                    if quantity > 0:
+                        st.write(f"- {size}: {quantity} kg")
+            
+            if sum_type == "Ανά Ποιότητα" and quality_totals:
+                st.write("**Ποσότητες ανά Ποιότητα:**")
+                for quality, quantity in quality_totals.items():
+                    if quantity > 0:
+                        st.write(f"- {quality}: {quantity} kg")
         
         if filtered_receipts:
             df = pd.DataFrame(filtered_receipts)
@@ -531,6 +678,9 @@ with current_tab[3]:
         with col1:
             start_date = st.date_input("Από ημερομηνία", value=datetime.today() - timedelta(days=30), key="orders_start")
             end_date = st.date_input("Έως ημερομηνία", value=datetime.today(), key="orders_end")
+            
+            # Επιλογή τύπου αθροίσματος
+            sum_type = st.selectbox("Τύπος Αθροίσματος", ["Σύνολο", "Ανά Νούμερο", "Ανά Ποιότητα"], key="order_sum_type")
         
         with col2:
             filtered_orders = []
@@ -542,14 +692,44 @@ with current_tab[3]:
                 
                 filtered_orders.append(order)
             
-            total_kg = sum(o['total_kg'] for o in filtered_orders)
-            total_value = sum(o['total_value'] for o in filtered_orders)
+            # Υπολογισμός συνολικών ποσοτήτων
+            if sum_type == "Σύνολο":
+                total_kg = sum(o['total_kg'] for o in filtered_orders)
+                total_value = sum(o['total_value'] for o in filtered_orders)
+            elif sum_type == "Ανά Νούμερο":
+                # Υπολογισμός ποσοτήτων ανά νούμερο
+                size_totals = {}
+                for size in ["10", "12", "14", "16", "18", "20", "22", "24", "26", "26-32", "Διάφορα", "Σκάρτα", "Μεταποίηση"]:
+                    size_totals[size] = sum(o.get('size_quantities', {}).get(size, 0) for o in filtered_orders)
+                total_kg = sum(size_totals.values())
+                total_value = sum(o['total_value'] for o in filtered_orders)
+            else:  # Ανά Ποιότητα
+                # Υπολογισμός ποσοτήτων ανά ποιότητα
+                quality_totals = {}
+                for quality in ["Ι", "ΙΙ", "ΙΙΙ", "Σκάρτα", "Διάφορα", "Μεταποίηση"]:
+                    quality_totals[quality] = sum(o.get('quality_quantities', {}).get(quality, 0) for o in filtered_orders)
+                total_kg = sum(quality_totals.values())
+                total_value = sum(o['total_value'] for o in filtered_orders)
+            
             executed_kg = sum(o.get('executed_quantity', 0) for o in filtered_orders)
             
             st.metric("Συνολικές Παραγγελίες", len(filtered_orders))
             st.metric("Συνολικά Κιλά", f"{total_kg} kg")
             st.metric("Εκτελεσθείσα Ποσότητα", f"{executed_kg} kg")
             st.metric("Συνολική Αξία", f"{total_value:.2f} €")
+            
+            # Εμφάνιση αναλυτικών ποσοτήτων
+            if sum_type == "Ανά Νούμερο" and size_totals:
+                st.write("**Ποσότητες ανά Νούμερο:**")
+                for size, quantity in size_totals.items():
+                    if quantity > 0:
+                        st.write(f"- {size}: {quantity} kg")
+            
+            if sum_type == "Ανά Ποιότητα" and quality_totals:
+                st.write("**Ποσότητες ανά Ποιότητα:**")
+                for quality, quantity in quality_totals.items():
+                    if quantity > 0:
+                        st.write(f"- {quality}: {quantity} kg")
         
         if filtered_orders:
             df = pd.DataFrame(filtered_orders)
@@ -644,7 +824,7 @@ with current_tab[3]:
         )
 
 # Tab 5: Διαχείριση
-with current_tab[4]:
+with tabs[4]:
     st.header("⚙️ Διαχείριση Οντοτήτων")
     
     entity_type = st.selectbox("Επιλέξτε τύπο οντότητας", ["Παραγωγοί", "Πελάτες"])
@@ -719,111 +899,147 @@ with current_tab[4]:
         st.info(f"Δεν υπάρχουν καταχωρημένοι {entity_type}")
 
 # Tab 6: Διαχείριση Χρηστών
-with current_tab[5]:
+with tabs[5]:
     if st.session_state.user_role == 'admin':
         st.header("👥 Διαχείριση Χρηστών")
         
-        # Προσθήκη νέου χρήστη
-        with st.form("user_form"):
-            st.subheader("➕ Προσθήκη Νέου Χρήστη")
+        st.subheader("Υπάρχοντες Χρήστες")
+        users_df = pd.DataFrame([
+            {'username': user, 'role': data['role'], 'full_name': data.get('full_name', '')}
+            for user, data in st.session_state['users'].items()
+        ])
+        st.dataframe(users_df, use_container_width=True)
+        
+        st.subheader("Δημιουργία Νέου Χρήστη")
+        with st.form("new_user_form"):
+            new_username = st.text_input("Νέο Όνομα Χρήστη")
+            new_password = st.text_input("Νέος Κωδικός", type="password")
+            confirm_password = st.text_input("Επιβεβαίωση Κωδικού", type="password")
+            new_role = st.selectbox("Ρόλος", ["viewer", "editor", "admin"])
+            new_fullname = st.text_input("Πλήρες Όνομα")
+            
+            if st.form_submit_button("➕ Δημιουργία Χρήστη"):
+                if new_password == confirm_password:
+                    if new_username not in st.session_state['users']:
+                        st.session_state['users'][new_username] = {
+                            'password': hash_password(new_password),
+                            'role': new_role,
+                            'full_name': new_fullname
+                        }
+                        save_data({'users': st.session_state['users']})
+                        st.success(f"✅ Ο χρήστης {new_username} δημιουργήθηκε!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ Το όνομα χρήστη υπάρχει ήδη")
+                else:
+                    st.error("❌ Οι κωδικοί δεν ταιριάζουν")
+        
+        st.subheader("Διαχείριση Υφιστάμενων Χρηστών")
+        user_options = list(st.session_state['users'].keys())
+        selected_user = st.selectbox("Επιλέξτε χρήστη για διαχείριση", user_options)
+        
+        if selected_user:
+            user_data = st.session_state['users'][selected_user]
             
             col1, col2 = st.columns(2)
             
             with col1:
-                username = st.text_input("Όνομα Χρήστη")
-                password = st.text_input("Κωδικός Πρόσβασης", type="password")
-                full_name = st.text_input("Πλήρες Όνομα")
+                with st.form("change_password_form"):
+                    st.write(f"**Αλλαγή Κωδικού για: {selected_user}**")
+                    new_password = st.text_input("Νέος Κωδικός", type="password", key="new_pass")
+                    confirm_password = st.text_input("Επιβεβαίωση Κωδικού", type="password", key="confirm_pass")
+                    
+                    if st.form_submit_button("🔒 Αλλαγή Κωδικού"):
+                        if new_password == confirm_password:
+                            st.session_state['users'][selected_user]['password'] = hash_password(new_password)
+                            save_data({'users': st.session_state['users']})
+                            st.success(f"✅ Ο κωδικός για τον χρήστη {selected_user} άλλαξε επιτυχώς!")
+                        else:
+                            st.error("❌ Οι κωδικοί δεν ταιριάζουν")
             
             with col2:
-                role = st.selectbox("Ρόλος", ["admin", "editor", "viewer"])
-            
-            submitted = st.form_submit_button("➕ Προσθήκη Χρήστη")
-            
-            if submitted:
-                if username in st.session_state['users']:
-                    st.error("Ο χρήστης υπάρχει ήδη")
-                else:
-                    st.session_state['users'][username] = {
-                        'password': hash_password(password),
-                        'role': role,
-                        'full_name': full_name
-                    }
+                with st.form("change_role_form"):
+                    st.write(f"**Αλλαγή Ρόλου για: {selected_user}**")
+                    new_role = st.selectbox("Νέος Ρόλος", ["viewer", "editor", "admin"], 
+                                          index=["viewer", "editor", "admin"].index(user_data['role']))
+                    
+                    if st.form_submit_button("🎭 Αλλαγή Ρόλου"):
+                        st.session_state['users'][selected_user]['role'] = new_role
+                        save_data({'users': st.session_state['users']})
+                        st.success(f"✅ Ο ρόλος για τον χρήστη {selected_user} άλλαξε επιτυχώς!")
+                
+                if selected_user != 'admin' and st.button("🗑️ Διαγραφή Χρήστη", key=f"del_user_{selected_user}"):
+                    del st.session_state['users'][selected_user]
                     save_data({'users': st.session_state['users']})
-                    st.success(f"✅ Προστέθηκε ο χρήστης {username}")
-                    time.sleep(1)
-                    st.rerun()
-        
-        # Κατάλογος χρηστών
-        st.subheader("📋 Κατάλογος Χρηστών")
-        for username, user_data in st.session_state['users'].items():
-            col1, col2, col3 = st.columns([3, 2, 1])
-            with col1:
-                st.write(f"**{username}** ({user_data['full_name']})")
-            with col2:
-                st.write(f"Ρόλος: {user_data['role']}")
-            with col3:
-                if username != st.session_state.current_user and st.button("🗑️ Διαγραφή", key=f"del_user_{username}"):
-                    del st.session_state['users'][username]
-                    save_data({'users': st.session_state['users']})
-                    st.success(f"✅ Διαγράφηκε ο χρήστης {username}")
+                    st.success(f"✅ Ο χρήστης {selected_user} διαγράφηκε!")
                     time.sleep(1)
                     st.rerun()
     else:
-        st.error("❌ Δεν έχετε δικαιώματα πρόσβασης στη διαχείριση χρηστών")
+        st.warning("⛔ Δεν έχετε δικαιώματα διαχείρισης χρηστών")
 
 # Tab 7: Αποθηκευτικοί Χώροι
-with current_tab[6]:
-    if st.session_state.user_role in ['admin', 'editor']:
-        st.header("🏢 Διαχείριση Αποθηκευτικών Χώρων")
+with tabs[6]:
+    st.header("🏢 Διαχείριση Αποθηκευτικών Χώρων")
+    
+    st.subheader("Προσθήκη Νέου Αποθηκευτικού Χώρου")
+    with st.form("new_storage_form"):
+        col1, col2 = st.columns(2)
         
-        # Προσθήκη νέου αποθηκευτικού χώρου
-        with st.form("storage_form"):
-            st.subheader("➕ Προσθήκη Νέου Αποθηκευτικού Χώρου")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                storage_id = st.number_input("ID Χώρου", min_value=1, step=1, value=get_next_id(st.session_state['storage_locations']))
-                storage_name = st.text_input("Όνομα Χώρου")
-            
-            with col2:
-                storage_capacity = st.number_input("Χωρητικότητα (kg)", min_value=1, step=100)
-                storage_description = st.text_input("Περιγραφή")
-            
-            submitted = st.form_submit_button("➕ Προσθήκη Χώρου")
-            
-            if submitted:
-                new_storage = {
-                    "id": storage_id,
-                    "name": storage_name,
-                    "capacity": storage_capacity,
-                    "description": storage_description
-                }
-                
-                st.session_state['storage_locations'].append(new_storage)
-                save_data({'storage_locations': st.session_state['storage_locations']})
-                st.success(f"✅ Προστέθηκε ο αποθηκευτικός χώρος {storage_name}")
-                time.sleep(1)
-                st.rerun()
+        with col1:
+            storage_id = st.number_input("ID Αποθήκης", min_value=1, step=1, value=get_next_id(st.session_state['storage_locations']))
+            storage_name = st.text_input("Όνομα Αποθήκης")
         
-        # Κατάλογος αποθηκευτικών χώρων
-        st.subheader("📋 Κατάλογος Αποθηκευτικών Χώρων")
-        for storage in st.session_state['storage_locations']:
+        with col2:
+            storage_capacity = st.number_input("Χωρητικότητα (kg)", min_value=1, step=1, value=1000)
+            storage_description = st.text_input("Περιγραφή")
+        
+        if st.form_submit_button("➕ Προσθήκη Αποθήκης"):
+            new_storage = {
+                "id": storage_id,
+                "name": storage_name,
+                "capacity": storage_capacity,
+                "description": storage_description
+            }
+            
+            st.session_state['storage_locations'].append(new_storage)
+            save_data({'storage_locations': st.session_state['storage_locations']})
+            st.success(f"✅ Η αποθήκη {storage_name} προστέθηκε!")
+            time.sleep(1)
+            st.rerun()
+    
+    st.subheader("Κατάλογος Αποθηκευτικών Χώρων")
+    if st.session_state['storage_locations']:
+        for location in st.session_state['storage_locations']:
             col1, col2, col3 = st.columns([3, 2, 1])
+            
             with col1:
-                st.write(f"**{storage['name']}** (ID: {storage['id']})")
-                st.write(f"Περιγραφή: {storage.get('description', '')}")
+                st.write(f"**{location['name']}** (ID: {location['id']})")
+                st.write(f"Χωρητικότητα: {location['capacity']} kg")
+                st.write(f"Περιγραφή: {location.get('description', '')}")
+            
             with col2:
-                st.write(f"Χωρητικότητα: {storage['capacity']} kg")
+                # Υπολογισμός χρησιμοποιημένου χώρου
+                used_space = 0
+                for receipt in st.session_state['receipts']:
+                    if receipt.get('storage_location_id') == location['id']:
+                        used_space += receipt['total_kg']
+                
+                st.write(f"Χρησιμοποιημένος χώρος: {used_space} kg")
+                st.write(f"Διαθέσιμος χώρος: {location['capacity'] - used_space} kg")
+                st.progress(used_space / location['capacity'])
+            
             with col3:
-                if st.button("🗑️ Διαγραφή", key=f"del_storage_{storage['id']}"):
-                    st.session_state['storage_locations'] = [s for s in st.session_state['storage_locations'] if s['id'] != storage['id']]
+                if can_delete() and st.button("🗑️ Διαγραφή", key=f"del_storage_{location['id']}"):
+                    st.session_state['storage_locations'] = [
+                        loc for loc in st.session_state['storage_locations'] if loc['id'] != location['id']
+                    ]
                     save_data({'storage_locations': st.session_state['storage_locations']})
-                    st.success(f"✅ Διαγράφηκε ο αποθηκευτικός χώρος {storage['name']}")
+                    st.success(f"✅ Η αποθήκη {location['name']} διαγράφηκε!")
                     time.sleep(1)
                     st.rerun()
     else:
-        st.error("❌ Δεν έχετε δικαιώματα πρόσβασης στη διαχείριση αποθηκευτικών χώρων")
+        st.info("Δεν υπάρχουν καταχωρημένοι αποθηκευτικοί χώροι")
 
 # Footer
 st.sidebar.markdown("---")
@@ -833,3 +1049,10 @@ st.sidebar.info("""
 - Προσθέστε νέες παραλαβές και παραγγελίες
 - Δημιουργήστε αναφορές και εξάγετε δεδομένα
 """)
+
+# Κουμπί ανανέωσης δεδομένων
+if st.sidebar.button("🔄 Ανανέωση Δεδομένων"):
+    data = load_data()
+    for key, value in data.items():
+        st.session_state[key] = value
+    st.sidebar.success("✅ Τα δεδομένα ανανεώθηκαν!")
