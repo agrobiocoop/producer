@@ -212,7 +212,9 @@ menu_options = [
     "Διαχείριση Χρηστών", 
     "Αποθηκευτικοί Χώροι"
 ]
-selected_menu = st.sidebar.radio("Επιλέξτε ενότητα", menu_options)
+selected_menu = st.sidebar.radio("Επιλέξτε ενότητα", menu_options, index=menu_options.index(st.session_state.current_tab))
+
+# Ενημέρωση του τρέχοντος tab
 st.session_state.current_tab = selected_menu
 
 # Στήλες για το tab layout
@@ -272,6 +274,7 @@ with tabs[0]:
                         if st.button("✏️ Επεξεργασία"):
                             st.session_state.edit_item = selected_item
                             st.session_state.edit_type = item_key
+                            st.session_state.current_tab = "Νέα Παραλαβή" if item_key == 'receipts' else "Νέα Παραγγελία"
                             st.rerun()
                         
                         if can_delete() and st.button("🗑️ Διαγραφή"):
@@ -287,16 +290,15 @@ with tabs[0]:
 
 # Tab 2: Νέα Παραλαβή
 with tabs[1]:
-    st.header("📥 Καταχώρηση Νέας Παραλαβής")
-    
     # Έλεγχος αν υπάρχει προς επεξεργασία στοιχείο
     if st.session_state.edit_item and st.session_state.edit_type == 'receipts':
         receipt = st.session_state.edit_item
         is_edit = True
-        st.info("📝 Επεξεργασία υπάρχουσας παραλαβής")
+        st.header("📝 Επεξεργασία Παραλαβής")
     else:
         receipt = {}
         is_edit = False
+        st.header("📥 Καταχώρηση Νέας Παραλαβής")
     
     with st.form("receipt_form"):
         col1, col2 = st.columns(2)
@@ -316,9 +318,10 @@ with tabs[1]:
             
             # Επιλογή παραγωγού
             producer_options = [f"{p['id']} - {p['name']}" for p in st.session_state['producers']]
-            default_producer = next((i for i, p in enumerate(producer_options) 
-                                   if str(receipt.get('producer_id', '')) in p), 0)
-            selected_producer = st.selectbox("Παραγωγός", options=producer_options, index=default_producer)
+            default_index = 0
+            if is_edit:
+                default_index = next((i for i, p in enumerate(producer_options) if str(receipt.get('producer_id', '')) in p), 0)
+            selected_producer = st.selectbox("Παραγωγός", options=producer_options, index=default_index)
             producer_id = int(selected_producer.split(" - ")[0]) if selected_producer else None
             producer_name = selected_producer.split(" - ")[1] if selected_producer else ""
             
@@ -334,9 +337,10 @@ with tabs[1]:
             
             # Επιλογή αποθηκευτικού χώρου
             storage_options = [f"{s['id']} - {s['name']}" for s in st.session_state['storage_locations']]
-            default_storage = next((i for i, s in enumerate(storage_options) 
-                                  if str(receipt.get('storage_location_id', '')) in s), 0)
-            selected_storage = st.selectbox("Αποθηκευτικός Χώρος", options=storage_options, index=default_storage)
+            default_storage_index = 0
+            if is_edit:
+                default_storage_index = next((i for i, s in enumerate(storage_options) if str(receipt.get('storage_location_id', '')) in s), 0)
+            selected_storage = st.selectbox("Αποθηκευτικός Χώρος", options=storage_options, index=default_storage_index)
             storage_id = int(selected_storage.split(" - ")[0]) if selected_storage else None
             
             # Πληρωμή
@@ -392,7 +396,14 @@ with tabs[1]:
             
             observations = st.text_area("📝 Παρατηρήσεις", value=receipt.get('observations', ''))
         
-        submitted = st.form_submit_button("✅ Καταχώρηση Παραλαβής")
+        col1, col2 = st.columns(2)
+        with col1:
+            submitted = st.form_submit_button("✅ Καταχώρηση Παραλαβής")
+        with col2:
+            if is_edit and st.form_submit_button("❌ Ακύρωση Επεξεργασίας"):
+                st.session_state.edit_item = None
+                st.session_state.edit_type = None
+                st.rerun()
         
         if submitted:
             new_receipt = {
@@ -436,16 +447,15 @@ with tabs[1]:
 
 # Tab 3: Νέα Παραγγελία
 with tabs[2]:
-    st.header("📋 Καταχώρηση Νέας Παραγγελίας")
-    
     # Έλεγχος αν υπάρχει προς επεξεργασία στοιχείο
     if st.session_state.edit_item and st.session_state.edit_type == 'orders':
         order = st.session_state.edit_item
         is_edit = True
-        st.info("📝 Επεξεργασία υπάρχουσας παραγγελίας")
+        st.header("📝 Επεξεργασία Παραγγελίας")
     else:
         order = {}
         is_edit = False
+        st.header("📋 Καταχώρηση Νέας Παραγγελίας")
     
     with st.form("order_form"):
         col1, col2 = st.columns(2)
@@ -464,9 +474,10 @@ with tabs[2]:
             
             # Επιλογή πελάτη
             customer_options = [f"{c['id']} - {c['name']}" for c in st.session_state['customers']]
-            default_customer = next((i for i, c in enumerate(customer_options) 
-                                   if str(order.get('customer_id', '')) in c), 0)
-            selected_customer = st.selectbox("Πελάτης", options=customer_options, index=default_customer)
+            default_customer_index = 0
+            if is_edit:
+                default_customer_index = next((i for i, c in enumerate(customer_options) if str(order.get('customer_id', '')) in c), 0)
+            selected_customer = st.selectbox("Πελάτης", options=customer_options, index=default_customer_index)
             customer_id = int(selected_customer.split(" - ")[0]) if selected_customer else None
             customer_name = selected_customer.split(" - ")[1] if selected_customer else ""
             
@@ -533,7 +544,14 @@ with tabs[2]:
             
             order_observations = st.text_area("📝 Παρατηρήσεις Παραγγελίας", value=order.get('observations', ''))
         
-        submitted = st.form_submit_button("✅ Καταχώρηση Παραγγελίας")
+        col1, col2 = st.columns(2)
+        with col1:
+            submitted = st.form_submit_button("✅ Καταχώρηση Παραγγελίας")
+        with col2:
+            if is_edit and st.form_submit_button("❌ Ακύρωση Επεξεργασίας"):
+                st.session_state.edit_item = None
+                st.session_state.edit_type = None
+                st.rerun()
         
         if submitted:
             new_order = {
@@ -561,7 +579,7 @@ with tabs[2]:
                     if item['id'] == order_id:
                         st.session_state['orders'][i] = new_order
                         break
-                st.success(f"✅ Η παραγγελία #{order_id} ενημерώθηκε επιτυχώς!")
+                st.success(f"✅ Η παραγγελία #{order_id} ενημερώθηκε επιτυχώς!")
             else:
                 # Προσθήκη νέας παραγγελίας
                 st.session_state['orders'].append(new_order)
