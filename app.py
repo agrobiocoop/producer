@@ -404,7 +404,7 @@ def show_new_receipt():
                 # Πιστοποιήσεις
                 certifications = st.multiselect(
                     "📑 Πιστοποιήσεις",
-                    ["GlobalGAP", "GRASP", "Βιολογικό", "Βιοδυναμικό", "Συμβаτικό", "ΟΠ"],
+                    ["GlobalGAP", "GRASP", "Βιολογικό", "Βιοδυναμικό", "Συμβατικό", "ΟΠ"],
                     default=receipt.get('certifications', [])
                 )
                 
@@ -423,7 +423,7 @@ def show_new_receipt():
                     st.info(f"📦 Σύνολο κιλών: {total_kg} kg")
                     st.success(f"💶 Συνολική αξία: {total_value:.2f} €")
                 
-                observations = st.text_area("📝 Παρατηρήσεις", value=recept.get('observations', ''))
+                observations = st.text_area("📝 Παρατηρήσεις", value=receipt.get('observations', ''))
             
             col1, col2 = st.columns(2)
             with col1:
@@ -723,7 +723,7 @@ def show_reports():
                 csv_data = df.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Εξαγωγή σε CSV",
-                    data=csv_data,
+                    data=curl_data,
                     file_name=f"αναφορά_παραλαβών_{start_date}_{end_date}.csv",
                     mime="text/csv"
                 )
@@ -891,7 +891,7 @@ def show_reports():
                     
                     producer_receipts[producer_name]['total_kg'] += receipt['total_kg']
                     producer_receipts[producer_name]['total_value'] += receipt['total_value']
-                    producer_receipts[producer_name]['receipts_count'] += 1
+                    producer_receipts[producer_name['receipts_count'] += 1
                     producer_receipts[producer_name]['receipts'].append(receipt)
                 
                 # Εμφάνιση αποτελεσμάτων
@@ -1053,20 +1053,20 @@ def show_user_management():
                 
                 if st.form_submit_button("➕ Δημιουργία Χρήστη"):
                     if new_password == confirm_password:
-                    if new_username not in st.session_state['users']:
-                        st.session_state['users'][new_username] = {
-                            'password': hash_password(new_password),
-                            'role': new_role,
-                            'full_name': new_fullname
-                        }
-                        save_data({'users': st.session_state['users']})
-                        st.success(f"✅ Ο χρήστης {new_username} δημιουργήθηκε!")
-                        time.sleep(1)
-                        st.rerun()
+                        if new_username not in st.session_state['users']:
+                            st.session_state['users'][new_username] = {
+                                'password': hash_password(new_password),
+                                'role': new_role,
+                                'full_name': new_fullname
+                            }
+                            save_data({'users': st.session_state['users']})
+                            st.success(f"✅ Ο χρήστης {new_username} δημιουργήθηκε!")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("❌ Το όνομα χρήστη υπάρχει ήδη")
                     else:
-                        st.error("❌ Το όνομα χρήστη υπάρχει ήδη")
-                else:
-                    st.error("❌ Οι κωδικοί δεν ταιριάζουν")
+                        st.error("❌ Οι κωδικοί δεν ταιριάζουν")
             
             st.subheader("Διαχείριση Υφιστάμενων Χρηστών")
             user_options = list(st.session_state['users'].keys())
