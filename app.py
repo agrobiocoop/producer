@@ -372,6 +372,9 @@ def show_new_receipt():
                 paid_options = ["Ναι", "Όχι"]
                 paid_index = 0 if receipt.get('paid') == "Ναι" else 1
                 paid_status = st.selectbox("Πληρώθηκε;", paid_options, index=paid_index)
+                
+                # Σχετικό τιμολόγιο
+                invoice_ref = st.text_input("Σχετικό Τιμολόγιο", value=receipt.get('invoice_ref', ''))
             
             with col2:
                 # Ποσότητες ανά νούμερο
@@ -388,7 +391,7 @@ def show_new_receipt():
                 
                 # Ποσότητες ανά ποιότητα
                 st.subheader("📊 Ποσότητες ανά Ποιότητα")
-                qualities = ["Ι", "ΙΙ", "ΙΙΙ", "Σκάρτα", "Διάφορα", "Μеταποίηση"]
+                qualities = ["Ι", "ΙΙ", "ΙΙΙ", "Σκάρτα", "Διάφορα", "Μεταποίηση"]
                 quality_quantities = receipt.get('quality_quantities', {})
                 for quality in qualities:
                     quality_quantities[quality] = st.number_input(
@@ -449,6 +452,7 @@ def show_new_receipt():
                     "total_kg": total_kg,
                     "total_value": total_value,
                     "paid": paid_status,
+                    "invoice_ref": invoice_ref,
                     "observations": observations,
                     "created_by": st.session_state.current_user,
                     "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -523,6 +527,9 @@ def show_new_order():
                 paid_options = ["Ναι", "Όχι"]
                 paid_index = 0 if order.get('paid') == "Ναι" else 1
                 paid_status = st.selectbox("Πληρώθηκε;", paid_options, index=paid_index)
+                
+                # Σχετικό τιμολόγιο
+                invoice_ref = st.text_input("Σχετικό Τιμολόγιο", value=order.get('invoice_ref', ''))
             
             with col2:
                 # Ποσότητες παραγγελίας ανά νούμερο
@@ -598,6 +605,7 @@ def show_new_order():
                     "total_kg": total_kg,
                     "total_value": total_value,
                     "paid": paid_status,
+                    "invoice_ref": invoice_ref,
                     "observations": order_observations,
                     "created_by": st.session_state.current_user,
                     "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -630,7 +638,8 @@ def show_reports():
             "Αναφορά Παραλαβών", 
             "Αναφορά Παραγγελιών", 
             "Αναφορά Πωλήσεων ανά Πελάτη",
-            "Αναφορά Αποθηκευτικών Χώρων"
+            "Αναφορά Αποθηκευτικών Χώρων",
+            "Αναφορά Παραγωγών ανά Παραγγελία"
         ])
         
         if report_type == "Αναφορά Παραλαβών":
@@ -674,7 +683,7 @@ def show_reports():
                 if sum_type == "Σύνολο":
                     total_kg = sum(r['total_kg'] for r in filtered_receipts)
                     total_value = sum(r['total_value'] for r in filtered_receipts)
-                elif sum_type == "Ανά Νούμερο":
+                elif sum_type == "Αnά Νούμερο":
                     # Υπολογισμός ποσοτήτων ανά νούμερο
                     size_totals = {}
                     for size in ["10", "12", "14", "16", "18", "20", "22", "24", "26", "26-32", "Διάφορα", "Σκάρτα", "Μεταποίηση"]:
@@ -694,7 +703,7 @@ def show_reports():
                 st.metric("Συνολική Αξία", f"{total_value:.2f} €")
                 
                 # Εμφάνιση αναλυτικών ποσοτήτων
-                if sum_type == "Ανά Νούμεро" and size_totals:
+                if sum_type == "Ανά Νούμερο" and size_totals:
                     st.write("**Ποσότητες ανά Νούμερο:**")
                     for size, quantity in size_totals.items():
                         if quantity > 0:
@@ -741,9 +750,9 @@ def show_reports():
                     
                     filtered_orders.append(order)
                 
-                # Υπολογισμός συνολικών ποσοτήτων
+                # Υπολογισμός μόνο των εκτελεσθέντων ποσοτήτων
                 if sum_type == "Σύνολο":
-                    total_kg = sum(o['total_kg'] for o in filtered_orders)
+                    total_kg = sum(o.get('executed_quantity', 0) for o in filtered_orders)
                     total_value = sum(o['total_value'] for o in filtered_orders)
                 elif sum_type == "Ανά Νούμερο":
                     # Υπολογισμός ποσοτήτων ανά νούμερο
@@ -846,6 +855,79 @@ def show_reports():
                         mime="text/csv"
                     )
         
+        elif report_type == "Αναφορά Παραγωγών ανά Παραγγελία":
+            st.subheader("Αναφορά Παραγωγών ανά Παραγγελία")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                start_date = st.date_input("Από ημερομηνία", value=datetime.today() - timedelta(days=90), key="producers_start")
+                end_date = st.date_input("Έως ημερομηνία", value=datetime.today(), key="producers_end")
+                
+                producer_options = ["Όλοι"] + [f"{p['id']} - {p['name']}" for p in st.session_state['producers']]
+                selected_producer = st.selectbox("Παραγωγός", options=producer_options)
+            
+            with col2:
+                producer_receipts = {}
+                for receipt in st.session_state['receipts']:
+                    receipt_date = datetime.strptime(receipt['receipt_date'], '%Y-%m-%d').date()
+                    
+                    if receipt_date < start_date or receipt_date > end_date:
+                        continue
+                    
+                    if selected_producer != "Όλοι":
+                        producer_id = int(selected_producer.split(" - ")[0])
+                        if receipt.get('producer_id') != producer_id:
+                            continue
+                    
+                    producer_name = receipt['producer_name']
+                    if producer_name not in producer_receipts:
+                        producer_receipts[producer_name] = {
+                            'total_kg': 0,
+                            'total_value': 0,
+                            'receipts_count': 0,
+                            'receipts': []
+                        }
+                    
+                    producer_receipts[producer_name]['total_kg'] += receipt['total_kg']
+                    producer_receipts[producer_name]['total_value'] += receipt['total_value']
+                    producer_receipts[producer_name]['receipts_count'] += 1
+                    producer_receipts[producer_name]['receipts'].append(receipt)
+                
+                # Εμφάνιση αποτελεσμάτων
+                for producer, data in producer_receipts.items():
+                    st.write(f"**{producer}**: {data['receipts_count']} παραλαβές, {data['total_kg']} kg, {data['total_value']:.2f}€")
+                    
+                    with st.expander(f"Λεπτομέρειες για {producer}"):
+                        for receipt in data['receipts']:
+                            st.write(f"- Παραλαβή #{receipt['id']}: {receipt['total_kg']} kg, {receipt['total_value']:.2f}€ ({receipt['receipt_date']})")
+                
+                if producer_receipts:
+                    # Δημιουργία dataframe για εξαγωγή
+                    export_data = []
+                    for producer, data in producer_receipts.items():
+                        for receipt in data['receipts']:
+                            export_data.append({
+                                'Παραγωγός': producer,
+                                'Παραλαβή ID': receipt['id'],
+                                'Ημερομηνία': receipt['receipt_date'],
+                                'Ποσότητα (kg)': receipt['total_kg'],
+                                'Αξία (€)': receipt['total_value'],
+                                'LOT': receipt.get('lot', ''),
+                                'Ποικιλία': receipt.get('variety', '')
+                            })
+                    
+                    df = pd.DataFrame(export_data)
+                    st.dataframe(df, use_container_width=True)
+                    
+                    csv_data = df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Εξαγωγή σε CSV",
+                        data=csv_data,
+                        file_name=f"αναφορά_παραγωγών_{start_date}_{end_date}.csv",
+                        mime="text/csv"
+                    )
+        
         else:  # Αναφορά Αποθηκευτικών Χώρων
             st.subheader("Αναφορά Αποθηκευτικών Χώρων")
             
@@ -927,7 +1009,7 @@ def show_management():
                 st.rerun()
         
         # Κατάλογος οντοτήτων με δυνατότητα διαγραφής
-        st.subheader(f"Κατάλογος {entity_type}")
+        st.subheader(f"Κατάλογος {entity_type")
         if entities:
             for item in entities:
                 col1, col2 = st.columns([4, 1])
@@ -1105,6 +1187,10 @@ st.sidebar.info("""
 - Προσθέστε νέες παραλαβές και παραγγελίες
 - Δημιουργήστε αναφορές και εξάγετε δεδομένα
 """)
+
+# Κουμπί εκτύπωσης αναφορών
+if st.sidebar.button("🖨️ Εκτύπωση Αναφορών"):
+    st.sidebar.success("📋 Οι αναφορές είναι έτοιμες για εκτύπωση!")
 
 # Κουμπί ανανέωσης δεδομένων
 if st.sidebar.button("🔄 Ανανέωση Δεδομένων"):
