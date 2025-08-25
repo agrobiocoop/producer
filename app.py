@@ -31,7 +31,7 @@ def init_data():
         if not os.path.exists('users.json'):
             users = {
                 'admin': {
-                    'password': 'admin123',
+                    'password': 'admin1234',
                     'role': 'admin',
                     'full_name': 'Διαχειριστής Συστήματος'
                 }
