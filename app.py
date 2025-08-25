@@ -715,18 +715,24 @@ def show_reports():
                         if quantity > 0:
                             st.write(f"- {quality}: {quantity} kg")
             
+            # Εμφάνιση πίνακα παραλαβών
             if filtered_receipts:
                 df = pd.DataFrame(filtered_receipts)
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df[['id', 'receipt_date', 'producer_name', 'total_kg', 'total_value', 'lot']], use_container_width=True)
                 
-                # Εξαγωγή σε CSV (χωρίς Excel)
-                csv_data = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Εξαγωγή σε CSV",
-                    data=curl_data,
-                    file_name=f"αναφορά_παραλαβών_{start_date}_{end_date}.csv",
-                    mime="text/csv"
-                )
+                # Εξαγωγή σε Excel
+                if st.button("📊 Εξαγωγή σε Excel"):
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df.to_excel(writer, index=False, sheet_name='Παραλαβές')
+                    st.download_button(
+                        label="📥 Κατέβασμα Excel",
+                        data=output.getvalue(),
+                        file_name=f"παραλαβές_{start_date}_{end_date}.xlsx",
+                        mime="application/vnd.ms-excel"
+                    )
+            else:
+                st.info("Δεν βρέθηκαν παραλαβές για τα επιλεγμένα κριτήρια")
         
         elif report_type == "Αναφορά Παραγγελιών":
             st.subheader("Αναφορά Παραγγελιών")
@@ -734,8 +740,11 @@ def show_reports():
             col1, col2 = st.columns(2)
             
             with col1:
-                start_date = st.date_input("Από ημερομηνία", value=datetime.today() - timedelta(days=30), key="orders_start")
-                end_date = st.date_input("Έως ημερομηνία", value=datetime.today(), key="orders_end")
+                start_date = st.date_input("Από ημερομηνία", value=datetime.today() - timedelta(days=30), key="order_start")
+                end_date = st.date_input("Έως ημερομηνία", value=datetime.today(), key="order_end")
+                
+                customer_options = ["Όλοι"] + [f"{c['id']} - {c['name']}" for c in st.session_state['customers']]
+                selected_customer = st.selectbox("Πελάτης", options=customer_options, key="order_customer")
                 
                 # Επιλογή τύπου αθροίσματος
                 sum_type = st.selectbox("Τύπος Αθροίσματος", ["Σύνολο", "Ανά Νούμερο", "Ανά Ποιότητα"], key="order_sum_type")
@@ -748,11 +757,16 @@ def show_reports():
                     if order_date < start_date or order_date > end_date:
                         continue
                     
+                    if selected_customer != "Όλοι":
+                        customer_id = int(selected_customer.split(" - ")[0])
+                        if order.get('customer_id') != customer_id:
+                            continue
+                    
                     filtered_orders.append(order)
                 
-                # Υπολογισμός μόνο των εκτελεσθέντων ποσοτήτων
+                # Υπολογισμός συνολικών ποσοτήτων
                 if sum_type == "Σύνολο":
-                    total_kg = sum(o.get('executed_quantity', 0) for o in filtered_orders)
+                    total_kg = sum(o['total_kg'] for o in filtered_orders)
                     total_value = sum(o['total_value'] for o in filtered_orders)
                 elif sum_type == "Ανά Νούμερο":
                     # Υπολογισμός ποσοτήτων ανά νούμερο
@@ -769,11 +783,8 @@ def show_reports():
                     total_kg = sum(quality_totals.values())
                     total_value = sum(o['total_value'] for o in filtered_orders)
                 
-                executed_kg = sum(o.get('executed_quantity', 0) for o in filtered_orders)
-                
                 st.metric("Συνολικές Παραγγελίες", len(filtered_orders))
                 st.metric("Συνολικά Κιλά", f"{total_kg} kg")
-                st.metric("Εκτελεσθείσα Ποσότητα", f"{executed_kg} kg")
                 st.metric("Συνολική Αξία", f"{total_value:.2f} €")
                 
                 # Εμφάνιση αναλυτικών ποσοτήτων
@@ -789,412 +800,378 @@ def show_reports():
                         if quantity > 0:
                             st.write(f"- {quality}: {quantity} kg")
             
+            # Εμφάνιση πίνακα παραγγελιών
             if filtered_orders:
                 df = pd.DataFrame(filtered_orders)
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df[['id', 'date', 'customer', 'total_kg', 'total_value', 'lot']], use_container_width=True)
                 
-                csv_data = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Εξαγωγή σε CSV",
-                    data=csv_data,
-                    file_name=f"αναφορά_παραγγελιών_{start_date}_{end_date}.csv",
-                    mime="text/csv"
-                )
-        
-        elif report_type == "Αναφορά Πωλήσεων ανά Πελάτη":
-            st.subheader("Αναφορά Πωλήσεων ανά Πελάτη")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                start_date = st.date_input("Από ημερομηνία", value=datetime.today() - timedelta(days=90), key="sales_start")
-                end_date = st.date_input("Έως ημερομηνία", value=datetime.today(), key="sales_end")
-                
-                customer_options = ["Όλοι"] + [f"{c['id']} - {c['name']}" for c in st.session_state['customers']]
-                selected_customer = st.selectbox("Πελάτης", options=customer_options)
-            
-            with col2:
-                customer_sales = {}
-                for order in st.session_state['orders']:
-                    order_date = datetime.strptime(order['date'], '%Y-%m-%d').date()
-                    
-                    if order_date < start_date or order_date > end_date:
-                        continue
-                    
-                    if selected_customer != "Όλοι":
-                        customer_id = int(selected_customer.split(" - ")[0])
-                        if order.get('customer_id') != customer_id:
-                            continue
-                    
-                    customer_name = order['customer']
-                    if customer_name not in customer_sales:
-                        customer_sales[customer_name] = {
-                            'total_kg': 0,
-                            'total_value': 0,
-                            'orders_count': 0
-                        }
-                    
-                    customer_sales[customer_name]['total_kg'] += order['total_kg']
-                    customer_sales[customer_name]['total_value'] += order['total_value']
-                    customer_sales[customer_name]['orders_count'] += 1
-                
-                # Εμφάνιση αποτελεσμάτων
-                for customer, data in customer_sales.items():
-                    st.write(f"**{customer}**: {data['orders_count']} παραγγελίες, {data['total_kg']} kg, {data['total_value']:.2f}€")
-                
-                if customer_sales:
-                    df = pd.DataFrame.from_dict(customer_sales, orient='index')
-                    df.index.name = 'Πελάτης'
-                    st.dataframe(df, use_container_width=True)
-                    
-                    csv_data = df.to_csv().encode('utf-8')
+                # Εξαγωγή σε Excel
+                if st.button("📊 Εξαγωγή σε Excel", key="export_orders"):
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df.to_excel(writer, index=False, sheet_name='Παραγγελίες')
                     st.download_button(
-                        label="📥 Εξαγωγή σε CSV",
-                        data=csv_data,
-                        file_name=f"αναφορά_πωλήσεων_πελάτη_{start_date}_{end_date}.csv",
-                        mime="text/csv"
+                        label="📥 Κατέβασμα Excel",
+                        data=output.getvalue(),
+                        file_name=f"παραγγελίες_{start_date}_{end_date}.xlsx",
+                        mime="application/vnd.ms-excel"
                     )
+            else:
+                st.info("Δεν βρέθηκαν παραγγελίες για τα επιλεγμένα κριτήρια")
         
-        elif report_type == "Αναφορά Παραγωγών ανά Παραγγελία":
-            st.subheader("Αναφορά Παραγωγών ανά Παραγγελία")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                start_date = st.date_input("Από ημερομηνία", value=datetime.today() - timedelta(days=90), key="producers_start")
-                end_date = st.date_input("Έως ημερομηνία", value=datetime.today(), key="producers_end")
-                
-                producer_options = ["Όλοι"] + [f"{p['id']} - {p['name']}" for p in st.session_state['producers']]
-                selected_producer = st.selectbox("Παραγωγός", options=producer_options)
-            
-            with col2:
-                producer_receipts = {}
-                for receipt in st.session_state['receipts']:
-                    receipt_date = datetime.strptime(receipt['receipt_date'], '%Y-%m-%d').date()
-                    
-                    if receipt_date < start_date or receipt_date > end_date:
-                        continue
-                    
-                    if selected_producer != "Όλοι":
-                        producer_id = int(selected_producer.split(" - ")[0])
-                        if receipt.get('producer_id') != producer_id:
-                            continue
-                    
-                    producer_name = receipt['producer_name']
-                    if producer_name not in producer_receipts:
-                        producer_receipts[producer_name] = {
-                            'total_kg': 0,
-                            'total_value': 0,
-                            'receipts_count': 0,
-                            'receipts': []
-                        }
-                    
-                    producer_receipts[producer_name]['total_kg'] += receipt['total_kg']
-                    producer_receipts[producer_name]['total_value'] += receipt['total_value']
-                    producer_receipts[producer_name['receipts_count'] += 1
-                    producer_receipts[producer_name]['receipts'].append(receipt)
-                
-                # Εμφάνιση αποτελεσμάτων
-                for producer, data in producer_receipts.items():
-                    st.write(f"**{producer}**: {data['receipts_count']} παραλαβές, {data['total_kg']} kg, {data['total_value']:.2f}€")
-                    
-                    with st.expander(f"Λεπτομέρειες για {producer}"):
-                        for receipt in data['receipts']:
-                            st.write(f"- Παραλαβή #{receipt['id']}: {receipt['total_kg']} kg, {receipt['total_value']:.2f}€ ({receipt['receipt_date']})")
-                
-                if producer_receipts:
-                    # Δημιουργία dataframe για εξαγωγή
-                    export_data = []
-                    for producer, data in producer_receipts.items():
-                        for receipt in data['receipts']:
-                            export_data.append({
-                                'Παραγωγός': producer,
-                                'Παραλαβή ID': receipt['id'],
-                                'Ημερομηνία': receipt['receipt_date'],
-                                'Ποσότητα (kg)': receipt['total_kg'],
-                                'Αξία (€)': receipt['total_value'],
-                                'LOT': receipt.get('lot', ''),
-                                'Ποικιλία': receipt.get('variety', '')
-                            })
-                    
-                    df = pd.DataFrame(export_data)
-                    st.dataframe(df, use_container_width=True)
-                    
-                    csv_data = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Εξαγωγή σε CSV",
-                        data=csv_data,
-                        file_name=f"αναφορά_παραγωγών_{start_date}_{end_date}.csv",
-                        mime="text/csv"
-                    )
-        
-        else:  # Αναφορά Αποθηκευτικών Χώρων
+        elif report_type == "Αναφορά Αποθηκευτικών Χώρων":
             st.subheader("Αναφορά Αποθηκευτικών Χώρων")
             
             storage_usage = calculate_storage_usage()
             
-            for loc_id, data in storage_usage.items():
-                with st.expander(f"{data['name']} - {data['used']}/{data['capacity']} kg ({data['used']/data['capacity']*100:.1f}%)"):
-                    st.progress(data['used'] / data['capacity'])
+            for loc_id, usage in storage_usage.items():
+                col1, col2, col3 = st.columns([2, 1, 1])
+                
+                with col1:
+                    st.subheader(f"🏢 {usage['name']}")
+                    st.write(f"Χωρητικότητα: {usage['capacity']} kg")
+                    st.write(f"Χρησιμοποιημένος χώρος: {usage['used']} kg")
                     
-                    if data['items']:
+                    # Μπάρα προόδου
+                    if usage['capacity'] > 0:
+                        usage_percentage = (usage['used'] / usage['capacity']) * 100
+                        st.progress(int(usage_percentage))
+                        st.write(f"Ποσοστό πλήρωσης: {usage_percentage:.1f}%")
+                
+                with col2:
+                    st.metric("Συνολικά κιλά", f"{usage['used']} kg")
+                    st.metric("Ελεύθερος χώρος", f"{usage['capacity'] - usage['used']} kg")
+                
+                with col3:
+                    if usage['items']:
                         st.write("**Περιεχόμενα:**")
-                        for item in data['items']:
-                            st.write(f"- Παραλαβή #{item['id']}: {item['kg']} kg ({item['date']})")
+                        for item in usage['items'][:3]:  # Εμφάνιση μόνο των πρώτων 3
+                            st.write(f"- Παραλαβή #{item['id']}: {item['kg']} kg")
+                        if len(usage['items']) > 3:
+                            st.write(f"... και {len(usage['items']) - 3} ακόμη")
                     else:
-                        st.info("Δεν υπάρχουν παραλαβές σε αυτόν τον χώρο")
+                        st.info("Κενή αποθήκη")
+        
+        elif report_type == "Αναφορά Πωλήσεων ανά Πελάτη":
+            st.subheader("Αναφορά Πωλήσεων ανά Πελάτη")
             
-            # Εξαγωγή αναφοράς
-            df = pd.DataFrame.from_dict(storage_usage, orient='index')
-            csv_data = df.to_csv().encode('utf-8')
-            st.download_button(
-                label="📥 Εξαγωγή σε CSV",
-                data=csv_data,
-                file_name="αναφορά_αποθηκευτικών_χώρων.csv",
-                mime="text/csv"
-            )
+            # Ομαδοποίηση παραγγελιών ανά πελάτη
+            customer_sales = {}
+            for order in st.session_state['orders']:
+                customer_id = order.get('customer_id')
+                customer_name = order.get('customer', 'Άγνωστος')
+                
+                if customer_id not in customer_sales:
+                    customer_sales[customer_id] = {
+                        'name': customer_name,
+                        'total_orders': 0,
+                        'total_kg': 0,
+                        'total_value': 0
+                    }
+                
+                customer_sales[customer_id]['total_orders'] += 1
+                customer_sales[customer_id]['total_kg'] += order.get('total_kg', 0)
+                customer_sales[customer_id]['total_value'] += order.get('total_value', 0)
+            
+            if customer_sales:
+                # Δημιουργία DataFrame για εμφάνιση
+                sales_data = []
+                for customer_id, data in customer_sales.items():
+                    sales_data.append({
+                        'Πελάτης': data['name'],
+                        'Παραγγελίες': data['total_orders'],
+                        'Σύνολο Κιλών': data['total_kg'],
+                        'Συνολική Αξία': data['total_value']
+                    })
+                
+                df_sales = pd.DataFrame(sales_data)
+                st.dataframe(df_sales, use_container_width=True)
+                
+                # Γράφημα πωλήσεων ανά πελάτη
+                if len(sales_data) > 1:
+                    st.subheader("📊 Γράφημα Πωλήσεων ανά Πελάτη")
+                    chart_data = df_sales.set_index('Πελάτης')[['Συνολική Αξία']]
+                    st.bar_chart(chart_data)
+            else:
+                st.info("Δεν υπάρχουν δεδομένα πωλήσεων")
+        
+        elif report_type == "Αναφορά Παραγωγών ανά Παραγγελία":
+            st.subheader("Αναφορά Παραγωγών ανά Παραλαβή")
+            
+            # Ομαδοποίηση παραλαβών ανά παραγωγό
+            producer_receipts = {}
+            for receipt in st.session_state['receipts']:
+                producer_id = receipt.get('producer_id')
+                producer_name = receipt.get('producer_name', 'Άγνωστος')
+                
+                if producer_id not in producer_receipts:
+                    producer_receipts[producer_id] = {
+                        'name': producer_name,
+                        'receipts_count': 0,
+                        'total_kg': 0,
+                        'total_value': 0
+                    }
+                
+                producer_receipts[producer_id]['receipts_count'] += 1
+                producer_receipts[producer_id]['total_kg'] += receipt.get('total_kg', 0)
+                producer_receipts[producer_id]['total_value'] += receipt.get('total_value', 0)
+            
+            if producer_receipts:
+                # Δημιουργία DataFrame για εμφάνιση
+                producer_data = []
+                for producer_id, data in producer_receipts.items():
+                    producer_data.append({
+                        'Παραγωγός': data['name'],
+                        'Παραλαβές': data['receipts_count'],
+                        'Σύνολο Κιλών': data['total_kg'],
+                        'Συνολική Αξία': data['total_value']
+                    })
+                
+                df_producers = pd.DataFrame(producer_data)
+                st.dataframe(df_producers, use_container_width=True)
+                
+                # Γράφημα παραλαβών ανά παραγωγό
+                if len(producer_data) > 1:
+                    st.subheader("📊 Γράφημα Παραλαβών ανά Παραγωγό")
+                    chart_data = df_producers.set_index('Παραγωγός')[['Συνολική Αξία']]
+                    st.bar_chart(chart_data)
+            else:
+                st.info("Δεν υπάρχουν δεδομένα παραλαβών")
 
 # Tab 5: Διαχείριση
 def show_management():
     with tabs[4]:
-        st.header("⚙️ Διαχείριση Οντοτήτων")
+        st.header("⚙️ Διαχείριση Συστήματος")
         
-        entity_type = st.selectbox("Επιλέξτε τύπο οντότητας", ["Παραγωγοί", "Πελάτες"])
+        management_type = st.selectbox("Επιλέξτε τύπο διαχείρισης", [
+            "Διαχείριση Παραγωγών",
+            "Διαχείριση Πελατών"
+        ])
         
-        if entity_type == "Παραγωγοί":
-            entities = st.session_state['producers']
-            entity_key = 'producers'
-        else:
-            entities = st.session_state['customers']
-            entity_key = 'customers'
-        
-        st.subheader(f"Διαχείριση {entity_type}")
-        
-        # Φόρμα προσθήκης νέου
-        with st.form(f"{entity_key}_form"):
-            entity_id = st.number_input("ID", min_value=1, step=1, value=get_next_id(entities))
-            name = st.text_input("Όνομα")
+        if management_type == "Διαχείριση Παραγωγών":
+            st.subheader("Διαχείριση Παραγωγών")
             
-            if entity_type == "Παραγωγοί":
-                quantity = st.number_input("Ποσότητα", min_value=0, step=1)
-                certifications_options = ["GlobalGAP", "GRASP", "Βιολογικό", "Βιοδυναμικό", "Συμβατικό", "ΟΠ"]
-                certifications = st.multiselect("Πιστοποιήσεις", certifications_options)
-            else:
-                address = st.text_input("Διεύθυνση")
-                phone = st.text_input("Τηλέφωνο")
-            
-            submitted = st.form_submit_button("💾 Προσθήκη")
-            
-            if submitted:
-                if entity_type == "Παραγωγοί":
-                    new_entity = {
-                        "id": entity_id,
-                        "name": name,
-                        "quantity": quantity,
-                        "certifications": certifications
-                    }
-                else:
-                    new_entity = {
-                        "id": entity_id,
-                        "name": name,
+            # Προσθήκη νέου παραγωγού
+            with st.form("add_producer_form"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    producer_id = st.number_input("ID Παραγωγού", min_value=1, step=1, value=get_next_id(st.session_state['producers']))
+                    producer_name = st.text_input("Όνομα Παραγωγού")
+                    producer_quantity = st.number_input("Ποσότητα", min_value=0, step=1)
+                
+                with col2:
+                    certifications = st.multiselect(
+                        "Πιστοποιήσεις",
+                        ["GlobalGAP", "GRASP", "Βιολογικό", "Βιοδυναμικό", "Συμβατικό", "ΟΠ"]
+                    )
+                    address = st.text_input("Διεύθυνση")
+                    phone = st.text_input("Τηλέφωνο")
+                
+                if st.form_submit_button("➕ Προσθήκη Παραγωγού"):
+                    new_producer = {
+                        "id": producer_id,
+                        "name": producer_name,
+                        "quantity": producer_quantity,
+                        "certifications": certifications,
                         "address": address,
                         "phone": phone
                     }
-                
-                entities.append(new_entity)
-                st.session_state[entity_key] = entities
-                save_data({entity_key: entities})
-                st.success(f"✅ Προστέθηκε νέος {entity_type[:-1]} #{entity_id}")
-                time.sleep(1)
-                st.rerun()
+                    st.session_state['producers'].append(new_producer)
+                    save_data({'producers': st.session_state['producers']})
+                    st.success(f"✅ Ο παραγωγός {producer_name} προστέθηκε επιτυχώς!")
+                    time.sleep(1)
+                    st.rerun()
+            
+            # Λίστα παραγωγών
+            if st.session_state['producers']:
+                st.subheader("📋 Κατάλογος Παραγωγών")
+                df_producers = pd.DataFrame(st.session_state['producers'])
+                st.dataframe(df_producers[['id', 'name', 'quantity', 'certifications']], use_container_width=True)
         
-        # Κατάλογος οντοτήτων με δυνατότητα διαγραφής
-        st.subheader(f"Κατάλογος {entity_type}")
-        if entities:
-            for item in entities:
-                col1, col2 = st.columns([4, 1])
+        elif management_type == "Διαχείριση Πελατών":
+            st.subheader("Διαχείριση Πελατών")
+            
+            # Προσθήκη νέου πελάτη
+            with st.form("add_customer_form"):
+                col1, col2 = st.columns(2)
+                
                 with col1:
-                    st.write(f"**{item['name']}** (ID: {item['id']})")
-                    if entity_type == "Παραγωγοί":
-                        st.write(f"Ποσότητα: {item.get('quantity', 0)} kg")
-                        st.write(f"Πιστοποιήσεις: {', '.join(item.get('certifications', []))}")
-                    else:
-                        st.write(f"Τηλ: {item.get('phone', '')}")
+                    customer_id = st.number_input("ID Πελάτη", min_value=1, step=1, value=get_next_id(st.session_state['customers']))
+                    customer_name = st.text_input("Όνομα Πελάτη")
+                    customer_address = st.text_input("Διεύθυνση")
+                
                 with col2:
-                    if can_delete() and st.button("🗑️ Διαγραφή", key=f"del_{item['id']}"):
-                        st.session_state[entity_key] = [i for i in entities if i['id'] != item['id']]
-                        save_data({entity_key: st.session_state[entity_key]})
-                        st.success("✅ Διαγραφή επιτυχής!")
-                        time.sleep(1)
-                        st.rerun()
-        else:
-            st.info(f"Δεν υπάρχουν καταχωρημένοι {entity_type}")
+                    customer_phone = st.text_input("Τηλέφωνο")
+                    customer_email = st.text_input("Email")
+                    customer_vat = st.text_input("ΑΦΜ")
+                
+                if st.form_submit_button("➕ Προσθήκη Πελάτη"):
+                    new_customer = {
+                        "id": customer_id,
+                        "name": customer_name,
+                        "address": customer_address,
+                        "phone": customer_phone,
+                        "email": customer_email,
+                        "vat": customer_vat
+                    }
+                    st.session_state['customers'].append(new_customer)
+                    save_data({'customers': st.session_state['customers']})
+                    st.success(f"✅ Ο πελάτης {customer_name} προστέθηκε επιτυχώς!")
+                    time.sleep(1)
+                    st.rerun()
+            
+            # Λίστα πελατών
+            if st.session_state['customers']:
+                st.subheader("📋 Κατάλογος Πελατών")
+                df_customers = pd.DataFrame(st.session_state['customers'])
+                st.dataframe(df_customers[['id', 'name', 'address', 'phone']], use_container_width=True)
 
 # Tab 6: Διαχείριση Χρηστών
 def show_user_management():
     with tabs[5]:
-        if st.session_state.user_role == 'admin':
-            st.header("👥 Διαχείριση Χρηστών")
+        st.header("👥 Διαχείριση Χρηστών")
+        
+        if st.session_state.user_role != 'admin':
+            st.warning("⚠️ Μόνο ο διαχειριστής μπορεί να διαχειριστεί χρήστες")
+            return
+        
+        # Προσθήκη νέου χρήστη
+        with st.form("add_user_form"):
+            col1, col2 = st.columns(2)
             
-            st.subheader("Υπάρχοντες Χρήστες")
-            users_df = pd.DataFrame([
-                {'username': user, 'role': data['role'], 'full_name': data.get('full_name', '')}
-                for user, data in st.session_state['users'].items()
-            ])
-            st.dataframe(users_df, use_container_width=True)
-            
-            st.subheader("Δημιουργία Νέου Χρήστη")
-            with st.form("new_user_form"):
-                new_username = st.text_input("Νέο Όνομα Χρήστη")
-                new_password = st.text_input("Νέος Κωδικός", type="password")
+            with col1:
+                username = st.text_input("Όνομα Χρήστη")
+                password = st.text_input("Κωδικός Πρόσβασης", type="password")
                 confirm_password = st.text_input("Επιβεβαίωση Κωδικού", type="password")
-                new_role = st.selectbox("Ρόλος", ["viewer", "editor", "admin"])
-                new_fullname = st.text_input("Πλήρες Όνομα")
-                
-                if st.form_submit_button("➕ Δημιουργία Χρήστη"):
-                    if new_password == confirm_password:
-                        if new_username not in st.session_state['users']:
-                            st.session_state['users'][new_username] = {
-                                'password': hash_password(new_password),
-                                'role': new_role,
-                                'full_name': new_fullname
-                            }
-                            save_data({'users': st.session_state['users']})
-                            st.success(f"✅ Ο χρήστης {new_username} δημιουργήθηκε!")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("❌ Το όνομα χρήστη υπάρχει ήδη")
-                    else:
-                        st.error("❌ Οι κωδικοί δεν ταιριάζουν")
             
-            st.subheader("Διαχείριση Υφιστάμενων Χρηστών")
-            user_options = list(st.session_state['users'].keys())
-            selected_user = st.selectbox("Επιλέξτε χρήστη για διαχείριση", user_options)
+            with col2:
+                full_name = st.text_input("Πλήρες Όνομα")
+                role = st.selectbox("Ρόλος", ["admin", "editor", "viewer"])
+                agency = st.text_input("Αντιπροσωπεία")
             
-            if selected_user:
-                user_data = st.session_state['users'][selected_user]
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    with st.form("change_password_form"):
-                        st.write(f"**Αλλαγή Κωδικού για: {selected_user}**")
-                        new_password = st.text_input("Νέος Κωδικός", type="password", key="new_pass")
-                        confirm_password = st.text_input("Επιβεβαίωση Κωδικού", type="password", key="confirm_pass")
-                        
-                        if st.form_submit_button("🔒 Αλλαγή Κωδικού"):
-                            if new_password == confirm_password:
-                                st.session_state['users'][selected_user]['password'] = hash_password(new_password)
-                                save_data({'users': st.session_state['users']})
-                                st.success(f"✅ Ο κωδικός για τον χρήστη {selected_user} άλλαξε επιτυχώς!")
-                            else:
-                                st.error("❌ Οι κωδικοί δεν ταιριάζουν")
-                
-                with col2:
-                    with st.form("change_role_form"):
-                        st.write(f"**Αλλαγή Ρόλου για: {selected_user}**")
-                        new_role = st.selectbox("Νέος Ρόλος", ["viewer", "editor", "admin"], 
-                                              index=["viewer", "editor", "admin"].index(user_data['role']))
-                        
-                        if st.form_submit_button("🎭 Αλλαγή Ρόλου"):
-                            st.session_state['users'][selected_user]['role'] = new_role
-                            save_data({'users': st.session_state['users']})
-                            st.success(f"✅ Ο ρόλος για τον χρήστη {selected_user} άλλαξε επιτυχώς!")
-                    
-                    if selected_user != 'admin' and st.button("🗑️ Διαγραφή Χρήστη", key=f"del_user_{selected_user}"):
-                        del st.session_state['users'][selected_user]
-                        save_data({'users': st.session_state['users']})
-                        st.success(f"✅ Ο χρήστης {selected_user} διαγράφηκε!")
-                        time.sleep(1)
-                        st.rerun()
+            if st.form_submit_button("➕ Προσθήκη Χρήστη"):
+                if not username or not password:
+                    st.error("Συμπληρώστε όλα τα απαραίτητα πεδία")
+                elif password != confirm_password:
+                    st.error("Οι κωδικοί δεν ταιριάζουν")
+                elif username in st.session_state['users']:
+                    st.error("Το όνομα χρήστη υπάρχει ήδη")
+                else:
+                    st.session_state['users'][username] = {
+                        'password': hash_password(password),
+                        'role': role,
+                        'full_name': full_name,
+                        'agency': agency
+                    }
+                    save_data({'users': st.session_state['users']})
+                    st.success(f"✅ Ο χρήστης {username} προστέθηκε επιτυχώς!")
+                    time.sleep(1)
+                    st.rerun()
+        
+        # Λίστα χρηστών
+        st.subheader("📋 Κατάλογος Χρηστών")
+        users_data = []
+        for username, user_info in st.session_state['users'].items():
+            users_data.append({
+                'Όνομα Χρήστη': username,
+                'Πλήρες Όνομα': user_info.get('full_name', ''),
+                'Ρόλος': user_info.get('role', ''),
+                'Αντιπροσωπεία': user_info.get('agency', '')
+            })
+        
+        if users_data:
+            df_users = pd.DataFrame(users_data)
+            st.dataframe(df_users, use_container_width=True)
+            
+            # Επιλογή χρήστη για διαγραφή
+            user_options = [f"{user['Όνομα Χρήστη']} ({user['Ρόλος']})" for user in users_data]
+            selected_user = st.selectbox("Επιλέξτε χρήστη για διαγραφή", user_options)
+            
+            if selected_user and st.button("🗑️ Διαγραφή Χρήστη"):
+                username_to_delete = selected_user.split(" ")[0]
+                if username_to_delete == st.session_state.current_user:
+                    st.error("Δεν μπορείτε να διαγράψετε τον εαυτό σας")
+                else:
+                    del st.session_state['users'][username_to_delete]
+                    save_data({'users': st.session_state['users']})
+                    st.success(f"✅ Ο χρήστης {username_to_delete} διαγράφηκε επιτυχώς!")
+                    time.sleep(1)
+                    st.rerun()
         else:
-            st.warning("⛔ Δεν έχετε δικαιώματα διαχείρισης χρηστών")
+            st.info("Δεν υπάρχουν καταχωρημένοι χρήστες")
 
 # Tab 7: Αποθηκευτικοί Χώροι
 def show_storage_management():
     with tabs[6]:
         st.header("🏢 Διαχείριση Αποθηκευτικών Χώρων")
         
-        st.subheader("Προσθήκη Νέου Αποθηκευτικού Χώρου")
-        with st.form("new_storage_form"):
+        # Προσθήκη νέου αποθηκευτικού χώρου
+        with st.form("add_storage_form"):
             col1, col2 = st.columns(2)
             
             with col1:
                 storage_id = st.number_input("ID Αποθήκης", min_value=1, step=1, value=get_next_id(st.session_state['storage_locations']))
                 storage_name = st.text_input("Όνομα Αποθήκης")
+                storage_capacity = st.number_input("Χωρητικότητα (kg)", min_value=1, step=100)
             
             with col2:
-                storage_capacity = st.number_input("Χωρητικότητα (kg)", min_value=1, step=1, value=1000)
-                storage_description = st.text_input("Περιγραφή")
+                storage_description = st.text_area("Περιγραφή")
+                storage_address = st.text_input("Διεύθυνση")
+                storage_manager = st.text_input("Υπεύθυνος")
             
             if st.form_submit_button("➕ Προσθήκη Αποθήκης"):
                 new_storage = {
                     "id": storage_id,
                     "name": storage_name,
                     "capacity": storage_capacity,
-                    "description": storage_description
+                    "description": storage_description,
+                    "address": storage_address,
+                    "manager": storage_manager
                 }
-                
                 st.session_state['storage_locations'].append(new_storage)
                 save_data({'storage_locations': st.session_state['storage_locations']})
-                st.success(f"✅ Η αποθήκη {storage_name} προστέθηκε!")
+                st.success(f"✅ Η αποθήκη {storage_name} προστέθηκε επιτυχώς!")
                 time.sleep(1)
                 st.rerun()
         
-        st.subheader("Κατάλογος Αποθηκευτικών Χώρων")
-        if st.session_state['storage_locations']:
-            for location in st.session_state['storage_locations']:
-                col1, col2, col3 = st.columns([3, 2, 1])
+        # Εμφάνιση αποθηκευτικών χώρων και χρήσης
+        storage_usage = calculate_storage_usage()
+        
+        for loc_id, usage in storage_usage.items():
+            with st.expander(f"🏢 {usage['name']} - {usage['used']}/{usage['capacity']} kg"):
+                col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.write(f"**{location['name']}** (ID: {location['id']})")
-                    st.write(f"Χωρητικότητα: {location['capacity']} kg")
-                    st.write(f"Περιγραφή: {location.get('description', '')}")
+                    st.write(f"**Χωρητικότητα:** {usage['capacity']} kg")
+                    st.write(f"**Χρησιμοποιημένος χώρος:** {usage['used']} kg")
+                    st.write(f"**Ελεύθερος χώρος:** {usage['capacity'] - usage['used']} kg")
+                    
+                    if usage['capacity'] > 0:
+                        usage_percentage = (usage['used'] / usage['capacity']) * 100
+                        st.progress(int(usage_percentage))
+                        st.write(f"**Ποσοστό πλήρωσης:** {usage_percentage:.1f}%")
                 
                 with col2:
-                    # Υπολογισμός χρησιμοποιημένου χώρου
-                    used_space = 0
-                    for receipt in st.session_state['receipts']:
-                        if receipt.get('storage_location_id') == location['id']:
-                            used_space += receipt['total_kg']
-                    
-                    st.write(f"Χρησιμοποιημένος χώρος: {used_space} kg")
-                    st.write(f"Διαθέσιμος χώρος: {location['capacity'] - used_space} kg")
-                    st.progress(used_space / location['capacity'])
-                
-                with col3:
-                    if can_delete() and st.button("🗑️ Διαγραφή", key=f"del_storage_{location['id']}"):
-                        st.session_state['storage_locations'] = [
-                            loc for loc in st.session_state['storage_locations'] if loc['id'] != location['id']
-                        ]
-                        save_data({'storage_locations': st.session_state['storage_locations']})
-                        st.success(f"✅ Η αποθήκη {location['name']} διαγράφηκε!")
-                        time.sleep(1)
-                        st.rerun()
-        else:
-            st.info("Δεν υπάρχουν καταχωρημένοι αποθηκευτικοί χώροι")
+                    if usage['items']:
+                        st.write("**Περιεχόμενα:**")
+                        for item in usage['items']:
+                            st.write(f"- Παραλαβή #{item['id']}: {item['kg']} kg ({item['date']})")
+                    else:
+                        st.info("Κενή αποθήκη")
+        
+        # Λίστα όλων των αποθηκευτικών χώρων
+        if st.session_state['storage_locations']:
+            st.subheader("📋 Κατάλογος Αποθηκευτικών Χώρων")
+            df_storage = pd.DataFrame(st.session_state['storage_locations'])
+            st.dataframe(df_storage[['id', 'name', 'capacity', 'description']], use_container_width=True)
 
-# Εμφάνιση της σωστής καρτέλας βάσει επιλογής
-current_tab_index = menu_options.index(st.session_state.current_tab)
-show_tab(current_tab_index)
+# Εμφάνιση της σωστής καρτέλας
+show_tab(menu_options.index(st.session_state.current_tab))
 
 # Footer
 st.sidebar.markdown("---")
 st.sidebar.info("""
-**Οδηγίες Χρήσης:**
-- Χρησιμοποιήστε τις καρτέλες για να πλοηγηθείτε στο σύστημα
-- Προσθέστε νέες παραλαβές και παραγγελίες
-- Δημιουργήστε αναφορές και εξάγετε δεδομένα
+**Σύστημα Διαχείρισης Παραλαβών & Παραγγελιών**  
+v1.0 - Developed with ❤️
 """)
-
-# Κουμπί εκτύπωσης αναφορών
-if st.sidebar.button("🖨️ Εκτύπωση Αναφορών"):
-    st.sidebar.success("📋 Οι αναφορές είναι έτοιμες για εκτύπωση!")
-
-# Κουμπί ανανέωσης δεδομένων
-if st.sidebar.button("🔄 Ανανέωση Δεδομένων"):
-    data = load_data()
-    for key, value in data.items():
-        st.session_state[key] = value
-    st.sidebar.success("✅ Τα δεδομένα ανανεώθηκαν!")
