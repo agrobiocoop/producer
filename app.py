@@ -404,7 +404,7 @@ def show_new_receipt():
                 # Πιστοποιήσεις
                 certifications = st.multiselect(
                     "📑 Πιστοποιήσεις",
-                    ["GlobalGAP", "GRASP", "Βιολογικό", "Βιοδυναμικό", "Συμβατικό", "ΟΠ"],
+                    ["GlobalGAP", "GRASP", "Βιολογικό", "Βιοδυναμικό", "Συμβаτικό", "ΟΠ"],
                     default=receipt.get('certifications', [])
                 )
                 
@@ -423,7 +423,7 @@ def show_new_receipt():
                     st.info(f"📦 Σύνολο κιλών: {total_kg} kg")
                     st.success(f"💶 Συνολική αξία: {total_value:.2f} €")
                 
-                observations = st.text_area("📝 Παρατηρήσεις", value=receipt.get('observations', ''))
+                observations = st.text_area("📝 Παρατηρήσεις", value=recept.get('observations', ''))
             
             col1, col2 = st.columns(2)
             with col1:
@@ -683,7 +683,7 @@ def show_reports():
                 if sum_type == "Σύνολο":
                     total_kg = sum(r['total_kg'] for r in filtered_receipts)
                     total_value = sum(r['total_value'] for r in filtered_receipts)
-                elif sum_type == "Αnά Νούμερο":
+                elif sum_type == "Ανά Νούμερο":
                     # Υπολογισμός ποσοτήτων ανά νούμερο
                     size_totals = {}
                     for size in ["10", "12", "14", "16", "18", "20", "22", "24", "26", "26-32", "Διάφορα", "Σκάρτα", "Μεταποίηση"]:
@@ -1009,7 +1009,7 @@ def show_management():
                 st.rerun()
         
         # Κατάλογος οντοτήτων με δυνατότητα διαγραφής
-        st.subheader(f"Κατάλογος {entity_type")
+        st.subheader(f"Κατάλογος {entity_type}")
         if entities:
             for item in entities:
                 col1, col2 = st.columns([4, 1])
@@ -1053,20 +1053,20 @@ def show_user_management():
                 
                 if st.form_submit_button("➕ Δημιουργία Χρήστη"):
                     if new_password == confirm_password:
-                        if new_username not in st.session_state['users']:
-                            st.session_state['users'][new_username] = {
-                                'password': hash_password(new_password),
-                                'role': new_role,
-                                'full_name': new_fullname
-                            }
-                            save_data({'users': st.session_state['users']})
-                            st.success(f"✅ Ο χρήστης {new_username} δημιουργήθηκε!")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("❌ Το όνομα χρήστη υπάρχει ήδη")
+                    if new_username not in st.session_state['users']:
+                        st.session_state['users'][new_username] = {
+                            'password': hash_password(new_password),
+                            'role': new_role,
+                            'full_name': new_fullname
+                        }
+                        save_data({'users': st.session_state['users']})
+                        st.success(f"✅ Ο χρήστης {new_username} δημιουργήθηκε!")
+                        time.sleep(1)
+                        st.rerun()
                     else:
-                        st.error("❌ Οι κωδικοί δεν ταιριάζουν")
+                        st.error("❌ Το όνομα χρήστη υπάρχει ήδη")
+                else:
+                    st.error("❌ Οι κωδικοί δεν ταιριάζουν")
             
             st.subheader("Διαχείριση Υφιστάμενων Χρηστών")
             user_options = list(st.session_state['users'].keys())
